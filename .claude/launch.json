@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "static", "runtimeExecutable": "/opt/homebrew/bin/python3", "runtimeArgs": ["-m", "http.server", "5173", "--bind", "127.0.0.1", "--directory", "/Users/rashad/Desktop/Hackathon/grokbot-hack"], "port": 5173 }
+  ]
+}

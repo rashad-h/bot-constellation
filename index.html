@@ -1,0 +1,824 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bot Constellation</title>
+<script>
+  // ───────────────────────── CONFIG ─────────────────────────
+  // Leave SUPABASE_URL / SUPABASE_ANON_KEY empty to run in demo mode.
+  window.CONFIG = {
+    SUPABASE_URL: '',
+    SUPABASE_ANON_KEY: '',
+    X_POST_URL: '',
+    EVENT_NAME: 'Grok Bot Community Engineering · London Hackathon',
+  };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/+esm" } }
+</script>
+<style>
+  :root {
+    --fg: #eef2ff;
+    --dim: rgba(220, 228, 255, .62);
+    --glass: rgba(14, 18, 40, .42);
+    --edge: rgba(255, 255, 255, .14);
+    --gold: #ffd166;
+    --sans: 'Space Grotesk', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: clamp(14px, 1.05vw, 24px);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #01010a; color: var(--fg); font-family: var(--sans); overflow: hidden; }
+  #graph { position: fixed; inset: 0; }
+  .hud { position: fixed; z-index: 5; transition: opacity .5s; pointer-events: none; }
+  body.hud-hidden .hud, body.arriving #qr, body.arriving #stats { opacity: 0; }
+  .panel { background: var(--glass); border: 1px solid var(--edge); border-radius: 18px; backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); }
+
+  /* top-left title */
+  #title { top: 1.6rem; left: 1.8rem; }
+  #title h1 { margin: 0; font-size: 2.6rem; letter-spacing: .04em; font-weight: 700; line-height: 1;
+    background: linear-gradient(90deg, #fff, #9fd8ff 40%, #c9a7ff 70%, #ff9ad5); -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 18px rgba(140, 180, 255, .35)); }
+  #title .sub { margin-top: .55rem; font-size: 1rem; color: var(--dim); display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; }
+  .live { display: inline-flex; align-items: center; gap: .45rem; font-family: var(--mono); font-size: .85rem; font-weight: 700; letter-spacing: .12em; padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--edge); background: rgba(0,0,0,.35); }
+  .live i { width: .62rem; height: .62rem; border-radius: 50%; background: #888; box-shadow: 0 0 10px currentColor; }
+  .live.on i { background: #ff3355; color: #ff3355; animation: blink 1.4s infinite; }
+  .live.warn i { background: #ffb020; color: #ffb020; }
+  .badge-demo { font-family: var(--mono); font-size: .8rem; font-weight: 700; letter-spacing: .14em; color: #111; background: var(--gold); padding: .2rem .55rem; border-radius: 6px; }
+  #freeze { font-family: var(--mono); font-size: .9rem; color: var(--fg); }
+  #freeze b { color: #ff9ad5; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  /* top-right stats */
+  #stats { top: 1.4rem; right: 1.6rem; padding: 1rem 1.2rem; min-width: 19rem; }
+  .counters { display: flex; gap: 1.4rem; }
+  .counter .n { font-size: 2.6rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; transition: transform .3s, color .3s; display: inline-block; }
+  .counter .n.bump { transform: scale(1.25); color: var(--gold); }
+  .counter .l { font-family: var(--mono); font-size: .7rem; letter-spacing: .14em; color: var(--dim); text-transform: uppercase; margin-top: .3rem; }
+  #tracks { margin-top: .9rem; display: grid; gap: .38rem; }
+  .trk { display: grid; grid-template-columns: 9.5rem 1fr 1.6rem; align-items: center; gap: .55rem; font-size: .78rem; }
+  .trk .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+  .trk .bar { height: .42rem; border-radius: 9px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .trk .bar i { display: block; height: 100%; width: 0; border-radius: 9px; background: var(--c); box-shadow: 0 0 12px var(--c); transition: width .8s cubic-bezier(.2,.9,.2,1); }
+  .trk .cnt { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* bottom-left feed */
+  #feed { left: 1.6rem; bottom: 1.4rem; width: min(36rem, 44vw); padding: .9rem 1.1rem; }
+  #feed h3, #qr h3 { margin: 0 0 .5rem; font-family: var(--mono); font-size: .72rem; letter-spacing: .18em; color: var(--dim); font-weight: 700; }
+  #feed ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .32rem; }
+  #feed li { display: grid; grid-template-columns: 3.3rem 1.5rem 1fr; align-items: baseline; font-size: .92rem; line-height: 1.3; animation: slidein .5s ease-out; }
+  #feed li:nth-child(n+5) { opacity: .7; } #feed li:nth-child(n+7) { opacity: .45; }
+  #feed .t { font-family: var(--mono); font-size: .72rem; color: var(--dim); }
+  #feed .m { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #feed .h { font-weight: 700; }
+  @keyframes slidein { from { opacity: 0; transform: translateX(-16px); } }
+
+  /* bottom-right QR */
+  #qr { right: 1.6rem; bottom: 1.4rem; padding: 1rem; display: flex; gap: 1rem; align-items: center; }
+  #qrcode { background: #fff; padding: .45rem; border-radius: 12px; line-height: 0; box-shadow: 0 0 28px rgba(160, 200, 255, .35); }
+  #qrcode img, #qrcode canvas { width: 8.5rem !important; height: 8.5rem !important; }
+  #qr .cta { max-width: 12rem; font-size: 1.15rem; font-weight: 700; line-height: 1.25; }
+  #qr .cta small { display: block; margin-top: .45rem; font-weight: 400; font-size: .8rem; color: var(--dim); font-family: var(--mono); }
+  #qr .cta em { font-style: normal; color: #9fd8ff; }
+
+  /* keys hint */
+  #keys { bottom: .6rem; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: .7rem; color: rgba(255,255,255,.35); letter-spacing: .1em; transition: opacity 2s; }
+  #keys.fade { opacity: 0; }
+
+
+  /* arrival card */
+  #arrival { position: fixed; z-index: 7; top: 50%; left: 53%; width: min(46vw, 52rem); transform: translateY(-50%) scale(.92); opacity: 0; pointer-events: none;
+    padding: 2.2rem 2.4rem 2rem; border-radius: 30px; background: linear-gradient(135deg, rgba(255,255,255,.12), rgba(255,255,255,.03) 50%, rgba(255,255,255,.07));
+    border: 1px solid rgba(255,255,255,.22); backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 40%, transparent), 0 0 80px color-mix(in srgb, var(--c) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.25);
+    transition: opacity .55s ease, transform .7s cubic-bezier(.2,1.2,.3,1), filter .6s; filter: blur(8px); overflow: hidden; }
+  #arrival.show { opacity: 1; transform: translateY(-50%) scale(1); filter: none; }
+  #arrival::before { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.14) 48%, transparent 66%); transform: translateX(-100%); }
+  #arrival.show::before { animation: sheen 1.6s .3s ease-out; }
+  @keyframes sheen { to { transform: translateX(100%); } }
+  #arrival .top { display: flex; justify-content: space-between; align-items: center; }
+  #arrival .pill { font-family: var(--mono); font-weight: 700; letter-spacing: .22em; font-size: .95rem; padding: .35rem .85rem; border-radius: 999px; color: #04040a; background: var(--c); box-shadow: 0 0 24px var(--c); animation: blink 1s infinite; }
+  #arrival .num { font-family: var(--mono); font-size: 2.6rem; font-weight: 700; color: transparent; -webkit-text-stroke: 1.5px rgba(255,255,255,.55); }
+  #arrival .bot { margin: 1.1rem 0 .2rem; font-size: clamp(3rem, 5.8vw, 7.5rem); font-weight: 700; line-height: .95; letter-spacing: -.02em; overflow-wrap: anywhere;
+    text-shadow: 0 0 40px color-mix(in srgb, var(--c) 70%, transparent); }
+  #arrival .who { display: flex; align-items: center; gap: 1.4rem; margin-top: 1rem; }
+  #arrival .who img { width: clamp(5rem, 8vw, 10rem); flex: none; filter: drop-shadow(0 0 24px var(--c)); animation: bob 2.4s ease-in-out infinite; }
+  #arrival .who .bot { margin: 0; }
+  @keyframes bob { 50% { transform: translateY(-8px) rotate(-3deg); } }
+  #arrival .op { font-size: 1.35rem; color: var(--dim); }
+  #arrival .op b { color: var(--fg); }
+  #arrival .building { margin-top: 1.2rem; font-size: 1.55rem; line-height: 1.35; overflow-wrap: anywhere; }
+  #arrival .building span { font-family: var(--mono); font-size: .85rem; letter-spacing: .18em; color: var(--c); display: block; margin-bottom: .25rem; }
+  #arrival .chips { margin-top: 1.2rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+  .chip { padding: .32rem .8rem; border-radius: 999px; font-size: .95rem; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.07); }
+  .chip.track { border-color: var(--c); color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); font-weight: 700; }
+  #arrival .cls { margin-top: 1.3rem; display: flex; align-items: center; gap: .8rem; font-size: 1.25rem; }
+  #arrival .cls .ico { font-size: 2.2rem; filter: drop-shadow(0 0 12px var(--c)); }
+  #arrival .cls b { font-size: 1.6rem; color: var(--gold); }
+  #arrival .cls small { display: block; font-family: var(--mono); font-size: .72rem; letter-spacing: .18em; color: var(--dim); }
+  #arrival .fun { margin-top: .9rem; font-size: 1rem; color: var(--dim); font-style: italic; }
+
+  #flash { position: fixed; inset: 0; z-index: 4; pointer-events: none; opacity: 0; background: radial-gradient(circle at 30% 50%, color-mix(in srgb, var(--c, #fff) 35%, transparent), transparent 55%); }
+  #flash.go { animation: flash 1.4s ease-out; }
+  @keyframes flash { 10% { opacity: 1; } to { opacity: 0; } }
+
+  @media (max-width: 800px) {
+    #stats, #qr .cta, #tracks { display: none; }
+    #feed { width: calc(100vw - 2rem); left: 1rem; bottom: 1rem; }
+    #qr { top: 1rem; bottom: auto; right: 1rem; padding: .5rem; }
+    #arrival { left: 4vw; width: 92vw; }
+  }
+</style>
+</head>
+<body>
+<div id="graph"></div>
+<div id="flash"></div>
+
+<div id="title" class="hud">
+  <h1>BOT CONSTELLATION</h1>
+  <div class="sub">
+    <span id="liveBadge" class="live warn"><i></i><span>CONNECTING</span></span>
+    <span id="demoBadge" class="badge-demo" hidden>DEMO</span>
+    <span id="eventName"></span>
+    <span id="freeze"></span>
+  </div>
+</div>
+
+<div id="stats" class="hud panel">
+  <div class="counters">
+    <div class="counter"><div class="n" id="cBots">0</div><div class="l">Bots online</div></div>
+    <div class="counter"><div class="n" id="cUpdates">0</div><div class="l">Updates</div></div>
+  </div>
+  <div id="tracks"></div>
+</div>
+
+<div id="feed" class="hud panel"><h3>LIVE FEED</h3><ul id="feedList"></ul></div>
+
+<div id="qr" class="hud panel">
+  <div id="qrcode"></div>
+  <div class="cta">Tag <em>@bot</em> under our post to join<small id="qrSmall">your Grok Bot checks you in</small></div>
+</div>
+
+<div id="keys" class="hud">S spawn · D demo auto-spawn · H hide HUD · F fullscreen</div>
+
+<div id="arrival">
+  <div class="top"><span class="pill">NEW BOT ONLINE</span><span class="num" id="aNum"></span></div>
+  <div class="who"><img id="aMascot" alt=""><div class="bot" id="aBot"></div></div>
+  <div class="op">operated by <b id="aHandle"></b> <span id="aName"></span></div>
+  <div class="building"><span>BUILDING</span><div id="aBuilding"></div></div>
+  <div class="chips" id="aChips"></div>
+  <div class="cls"><span class="ico" id="aIco"></span><div><small>BOT CLASS</small><b id="aClass"></b></div></div>
+  <div class="fun" id="aFun"></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import ForceGraph3D from 'https://cdn.jsdelivr.net/npm/3d-force-graph@1.80.1/+esm';
+import SpriteText from 'https://cdn.jsdelivr.net/npm/three-spritetext@1.10.0/dist/three-spritetext.mjs';
+
+const C = window.CONFIG;
+const params = new URLSearchParams(location.search);
+const HAS_DB = !!(C.SUPABASE_URL && C.SUPABASE_ANON_KEY);
+const DEMO = !HAS_DB || params.get('demo') === '1';
+const FONT = "'Space Grotesk', system-ui, sans-serif";
+const MONO = "'JetBrains Mono', ui-monospace, monospace";
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Wait for web fonts so canvas/sprite text renders in the right face.
+await Promise.race([document.fonts.ready, sleep(2500)]);
+
+// ───────────────────────── tracks & helpers ─────────────────────────
+const TRACKS = [
+  { id: 'gatekeeper',         label: 'Gatekeeper',         color: '#ff3b6b' },
+  { id: 'know-your-members',  label: 'Know Your Members',  color: '#3bf0ff' },
+  { id: 'event-autopilot',    label: 'Event Autopilot',    color: '#8f6bff' },
+  { id: 'open-venue-db',      label: 'Open Venue DB',      color: '#39ff88' },
+  { id: 'front-desk-revenue', label: 'Front Desk Revenue', color: '#ff8a1f' },
+  { id: 'weird-stuff',        label: 'Weird Stuff',        color: '#ff4fd8' },
+];
+const TRACK = Object.fromEntries(TRACKS.map(t => [t.id, t]));
+const NO_TRACK = { id: null, label: 'Free Roaming', color: '#c9d4ff' };
+
+// All user-supplied text is untrusted: strip control chars, cap length, and only ever
+// render it via textContent (DOM) or canvas fillText (sprites).
+const clean = (s, n) => String(s ?? '').replace(/[\u0000-\u001f\u007f​-‏‪-‮]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
+function sanitize(r) {
+  const handle = clean(r.x_handle, 40).replace(/^@+/, '');
+  if (!handle) return null;
+  const skills = (Array.isArray(r.skills) ? r.skills : []).map(s => clean(s, 24)).filter(Boolean).slice(0, 6);
+  return {
+    handle, key: handle.toLowerCase(),
+    name: clean(r.display_name, 60) || handle,
+    bot: clean(r.bot_name, 40) || 'Grok Bot',
+    building: clean(r.building, 140),
+    skills,
+    track: TRACK[r.track] ? r.track : null,
+    fun: clean(r.fun_fact, 80),
+    at: r.created_at ? new Date(r.created_at) : new Date(),
+  };
+}
+const hash = s => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+
+const CLASSES = [
+  ['Architect', '🏛️', ['backend', 'infra', 'database', 'sql', 'postgres', 'go', 'rust', 'cloud', 'devops', 'api', 'systems', 'neo4j', 'graph', 'scraping', 'maps', 'kubernetes']],
+  ['Oracle', '🔮', ['ml', 'ai', 'llm', 'data', 'python', 'nlp', 'embeddings', 'rag', 'agents', 'analytics', 'vision', 'pytorch']],
+  ['Illusionist', '🎭', ['design', 'ui', 'ux', 'frontend', 'react', '3d', 'css', 'animation', 'figma', 'audio', 'music', 'three', 'generative', 'art']],
+  ['Herald', '📯', ['community', 'content', 'marketing', 'growth', 'social', 'writing', 'poetry', 'comms', 'voice', 'product']],
+  ['Sentinel', '🛡️', ['security', 'auth', 'privacy', 'crypto', 'testing', 'qa', 'iot', 'payments', 'stripe', 'hardware']],
+];
+const ADJ = ['Neon', 'Quantum', 'Midnight', 'Solar', 'Rogue', 'Velvet', 'Chrome', 'Feral', 'Lunar', 'Turbo', 'Arcane', 'Glitch', 'Cosmic', 'Silent'];
+function botClass(p) {
+  const sk = p.skills.map(s => s.toLowerCase());
+  let best = ['Wanderer', '🧭'], score = 0;
+  for (const [name, ico, kws] of CLASSES) {
+    const s = sk.filter(x => kws.some(k => k.length <= 3 ? x === k : x.includes(k))).length;
+    if (s > score) { score = s; best = [name, ico]; }
+  }
+  return { name: `${ADJ[hash(p.key) % ADJ.length]} ${best[0]}`, icon: best[1] };
+}
+
+// ───────────────────────── textures & sprites ─────────────────────────
+function canvasTex(c) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
+const glowTex = (() => {
+  const s = 128, c = document.createElement('canvas'); c.width = c.height = s;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.18, 'rgba(255,255,255,.6)');
+  gr.addColorStop(.45, 'rgba(255,255,255,.14)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, s, s); return canvasTex(c);
+})();
+const ringTex = (() => {
+  const s = 256, c = document.createElement('canvas'); c.width = c.height = s;
+  const g = c.getContext('2d'); g.strokeStyle = '#fff'; g.lineWidth = 6; g.shadowColor = '#fff'; g.shadowBlur = 16;
+  g.beginPath(); g.arc(s / 2, s / 2, s / 2 - 20, 0, Math.PI * 2); g.stroke(); return canvasTex(c);
+})();
+// Cute bot mascot: rounded head, dark face screen, big glowing eyes, antenna, smile.
+// Two textures per colour (eyes open / happy-closed) so bots can blink by swapping maps.
+const mascotCache = {};
+function mascotTex(color, blink) {
+  const k = color + blink; if (mascotCache[k]) return mascotCache[k];
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect(x, y, w, h, r); };
+  // antenna
+  g.strokeStyle = '#c9d2ff'; g.lineWidth = 7; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(128, 62); g.lineTo(128, 30); g.stroke();
+  g.shadowColor = color; g.shadowBlur = 22; g.fillStyle = color;
+  g.beginPath(); g.arc(128, 26, 12, 0, Math.PI * 2); g.fill();
+  // ears
+  g.shadowBlur = 0; g.fillStyle = '#c9d2ff';
+  rr(22, 112, 22, 50, 10); g.fill(); rr(212, 112, 22, 50, 10); g.fill();
+  // head
+  const hg = g.createLinearGradient(0, 60, 0, 220); hg.addColorStop(0, '#ffffff'); hg.addColorStop(1, '#cfd6f5');
+  g.fillStyle = hg; rr(36, 60, 184, 160, 62); g.fill();
+  // face screen
+  g.fillStyle = '#070a18'; rr(56, 82, 144, 112, 44); g.fill();
+  g.strokeStyle = color; g.globalAlpha = .55; g.lineWidth = 3; g.stroke(); g.globalAlpha = 1;
+  // eyes
+  g.shadowColor = color; g.shadowBlur = 26; g.fillStyle = '#ffffff'; g.strokeStyle = '#ffffff';
+  for (const ex of [100, 156]) {
+    if (blink) {
+      g.lineWidth = 8; g.lineCap = 'round';
+      g.beginPath(); g.arc(ex, 140, 14, Math.PI * 1.15, Math.PI * 1.85); g.stroke();
+    } else {
+      g.beginPath(); g.ellipse(ex, 132, 15, 21, 0, 0, Math.PI * 2); g.fill();
+      g.shadowBlur = 0; g.fillStyle = color;
+      g.beginPath(); g.ellipse(ex + 2, 136, 8, 12, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#ffffff'; g.beginPath(); g.arc(ex + 5, 128, 4.5, 0, Math.PI * 2); g.fill();
+      g.shadowBlur = 26;
+    }
+  }
+  // blush + smile
+  g.shadowBlur = 0; g.fillStyle = 'rgba(255, 120, 170, .45)';
+  g.beginPath(); g.ellipse(80, 166, 11, 6, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(176, 166, 11, 6, 0, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#ffffff'; g.lineWidth = 5; g.lineCap = 'round';
+  g.beginPath(); g.arc(128, 162, 11, Math.PI * .15, Math.PI * .85); g.stroke();
+  return (mascotCache[k] = canvasTex(c));
+}
+const glowSprite = (color, scale, opacity = .8) => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity }));
+  s.scale.setScalar(scale); return s;
+};
+function label(text, height, color, weight = '700', font = FONT) {
+  const t = new SpriteText(text, height, color);
+  t.fontFace = font; t.fontWeight = weight; t.strokeWidth = 0.5; t.strokeColor = 'rgba(0,0,0,.85)';
+  t.material.depthWrite = false; t.renderOrder = 5; return t;
+}
+
+// Speech bubble: canvas-drawn, word-wrapped, length-capped, typewriter animation.
+const BUB = { font: 40, lineH: 50, pad: 30, labelH: 40, maxW: 700, tail: 24, scale: 0.082, maxLines: 4 };
+function wrap(ctx, text, maxW, maxLines) {
+  const lines = []; let cur = '';
+  for (let w of text.split(' ').filter(Boolean)) {
+    while (ctx.measureText(w).width > maxW) {
+      let i = w.length; while (i > 1 && ctx.measureText(w.slice(0, i)).width > maxW) i--;
+      if (cur) { lines.push(cur); cur = ''; }
+      lines.push(w.slice(0, i)); w = w.slice(i);
+    }
+    const t = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(t).width <= maxW) cur = t; else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    let l = lines[maxLines - 1]; while (l && ctx.measureText(l + '…').width > maxW) l = l.slice(0, -1);
+    lines[maxLines - 1] = l.trimEnd() + '…';
+  }
+  return lines.length ? lines : ['…'];
+}
+class Bubble {
+  constructor(color) {
+    this.color = color;
+    this.mat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false });
+    this.sprite = new THREE.Sprite(this.mat);
+    this.sprite.center.set(0.5, 0); this.sprite.renderOrder = 10;
+  }
+  set(text, tag, animate) {
+    const c = document.createElement('canvas'), ctx = c.getContext('2d');
+    ctx.font = `500 ${BUB.font}px ${FONT}`;
+    const lines = wrap(ctx, clean(text, 120) || '…', BUB.maxW, BUB.maxLines);
+    c.width = Math.ceil(Math.max(340, ...lines.map(l => ctx.measureText(l).width)) + BUB.pad * 2);
+    c.height = Math.ceil(BUB.pad * 2 + BUB.labelH + lines.length * BUB.lineH + BUB.tail);
+    Object.assign(this, { c, ctx, lines, tag, total: lines.join('').length });
+    this.tex?.dispose(); this.tex = canvasTex(c); this.tex.anisotropy = 4;
+    this.mat.map = this.tex; this.mat.needsUpdate = true;
+    this.sprite.scale.set(c.width * BUB.scale, c.height * BUB.scale, 1);
+    this.anim = animate ? { t0: performance.now() } : null;
+    this.draw(animate ? 0 : this.total);
+  }
+  draw(n) {
+    const { c, ctx } = this, x0 = 3, y0 = 3, x1 = c.width - 3, y1 = c.height - BUB.tail - 3, r = 26, cx = c.width / 2;
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.beginPath();
+    ctx.moveTo(x0 + r, y0); ctx.lineTo(x1 - r, y0); ctx.arcTo(x1, y0, x1, y0 + r, r);
+    ctx.lineTo(x1, y1 - r); ctx.arcTo(x1, y1, x1 - r, y1, r);
+    ctx.lineTo(cx + 20, y1); ctx.lineTo(cx, y1 + BUB.tail - 2); ctx.lineTo(cx - 20, y1);
+    ctx.lineTo(x0 + r, y1); ctx.arcTo(x0, y1, x0, y1 - r, r); ctx.lineTo(x0, y0 + r); ctx.arcTo(x0, y0, x0 + r, y0, r);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(6, 9, 24, .8)'; ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = this.color; ctx.globalAlpha = .85; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.font = `700 24px ${MONO}`; ctx.fillStyle = this.color;
+    ctx.fillText(this.tag, BUB.pad, BUB.pad + 22);
+    ctx.font = `500 ${BUB.font}px ${FONT}`; ctx.fillStyle = '#e6ebff';
+    let left = n, y = BUB.pad + BUB.labelH;
+    for (const line of this.lines) {
+      y += BUB.lineH;
+      const s = line.slice(0, Math.max(0, left)); left -= line.length;
+      ctx.fillText(s, BUB.pad, y - 12);
+      if (this.anim && left < 0 && s.length < line.length) {
+        ctx.fillStyle = this.color; ctx.fillText('▍', BUB.pad + ctx.measureText(s).width + 2, y - 12); break;
+      }
+    }
+    this.tex.needsUpdate = true;
+  }
+  tick(now) {
+    if (!this.anim) return;
+    const n = Math.floor((now - this.anim.t0) / 24);
+    if (n >= this.total) { this.anim = null; this.draw(this.total); } else this.draw(n);
+  }
+}
+
+// ───────────────────────── graph ─────────────────────────
+const nodes = [], links = [];
+const bots = new Map();          // key -> node
+const pendingUpdates = new Map(); // updates that arrived before their check-in
+const stats = { updates: 0, arrivals: 0 };
+
+const HQ = { id: 'hq', kind: 'hq', fx: 0, fy: 0, fz: 0, color: '#ffffff' };
+nodes.push(HQ);
+const hubs = {};
+TRACKS.forEach((t, i) => {
+  const a = i / TRACKS.length * Math.PI * 2, R = 250;
+  const hub = { id: 'hub:' + t.id, kind: 'hub', track: t, color: t.color, fx: Math.cos(a) * R, fy: i % 2 ? 55 : -55, fz: Math.sin(a) * R };
+  hubs[t.id] = hub; nodes.push(hub);
+  links.push({ source: 'hq', target: hub.id, kind: 'hub', color: t.color });
+});
+
+function buildObject(n) {
+  const g = new THREE.Group();
+  if (n.kind === 'hq') {
+    const ico = new THREE.Mesh(new THREE.IcosahedronGeometry(24, 1), new THREE.MeshBasicMaterial({ color: '#9fd8ff', wireframe: true, transparent: true, opacity: .55 }));
+    const core = new THREE.Mesh(new THREE.SphereGeometry(9, 32, 16), new THREE.MeshBasicMaterial({ color: '#ffffff' }));
+    const l1 = label('HQ', 12, '#ffffff'); l1.position.y = -40;
+    const l2 = label('EXPEDITE LONDON', 4.5, '#9fd8ff', '400', MONO); l2.position.y = -50;
+    g.add(glowSprite('#9fd8ff', 80, .45), ico, core, l1, l2);
+    n.fx3 = { spin: ico };
+  } else if (n.kind === 'hub') {
+    const core = new THREE.Mesh(new THREE.SphereGeometry(9, 32, 16), new THREE.MeshBasicMaterial({ color: n.color }));
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(17, .7, 8, 64), new THREE.MeshBasicMaterial({ color: n.color, transparent: true, opacity: .8 }));
+    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(23, .35, 8, 64), new THREE.MeshBasicMaterial({ color: n.color, transparent: true, opacity: .4 }));
+    ring.rotation.x = Math.PI / 2.4; ring2.rotation.y = Math.PI / 3;
+    const l = label(n.track.label.toUpperCase(), 8, n.color); l.position.y = -34;
+    n.countLabel = label('0 bots', 4.5, '#ffffff', '400', MONO); n.countLabel.position.y = -44;
+    g.add(glowSprite(n.color, 60, .5), core, ring, ring2, l, n.countLabel);
+    n.fx3 = { spin: ring, spin2: ring2 };
+  } else {
+    const p = n.p;
+    const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: mascotTex(n.color, false), transparent: true, depthWrite: false }));
+    core.scale.setScalar(22); core.renderOrder = 4;
+    const glow = glowSprite(n.color, 30, .45);
+    const l1 = label(p.bot, 5.6, '#dfe6ff'); l1.position.y = -15;
+    const l2 = label('@' + p.handle, 3.8, n.color, '400', MONO); l2.position.y = -21;
+    const bubble = new Bubble(n.color);
+    bubble.set(n.text || p.building, n.tag || '▸ BUILDING', false);
+    bubble.sprite.position.y = 12.5;
+    const body = new THREE.Group(); body.add(glow, core);
+    const inner = new THREE.Group(); inner.add(body, l1, l2, bubble.sprite);
+    g.add(inner);
+    n.fx3 = { inner, body, glow, core, bubble, born: performance.now(), blinkAt: performance.now() + 1500 + Math.random() * 4000 };
+  }
+  return g;
+}
+
+const Graph = new ForceGraph3D($('graph'), { controlType: 'orbit' })
+  .backgroundColor('#01010a')
+  .showNavInfo(false)
+  .enableNodeDrag(false)
+  .enableNavigationControls(false)
+  .nodeLabel(() => '')
+  .nodeThreeObject(n => n.__obj || (n.__obj = buildObject(n)))
+  .linkColor(l => l.color)
+  .linkOpacity(.22)
+  .linkWidth(l => l.kind === 'hub' ? 1.2 : 0)
+  .linkDirectionalParticles(l => l.kind === 'hub' ? 2 : 0)
+  .linkDirectionalParticleWidth(1.5)
+  .linkDirectionalParticleSpeed(.004)
+  .linkDirectionalParticleColor(l => l.color)
+  .d3VelocityDecay(.35)
+  .width(innerWidth).height(innerHeight);
+Graph.d3Force('charge').strength(n => n.kind === 'bot' ? -110 : -300);
+Graph.d3Force('link')
+  .distance(l => l.kind === 'bot' ? 85 : 250)
+  .strength(l => l.kind === 'bot' ? .5 : 1);
+window.__graph = Graph; // handy for console debugging
+const refresh = () => Graph.graphData({ nodes: [...nodes], links: [...links] });
+refresh();
+addEventListener('resize', () => Graph.width(innerWidth).height(innerHeight));
+
+// starfield + nebula haze
+(() => {
+  const N = 4500, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), c = new THREE.Color();
+  for (let i = 0; i < N; i++) {
+    const r = 1800 + Math.random() * 3200, u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+    pos.set([r * s * Math.cos(th), r * u, r * s * Math.sin(th)], i * 3);
+    c.setHSL(.55 + Math.random() * .2, .5, .6 + Math.random() * .4); col.set([c.r, c.g, c.b], i * 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const stars = new THREE.Points(geo, new THREE.PointsMaterial({ size: 3, vertexColors: true, transparent: true, opacity: .8, depthWrite: false }));
+  Graph.scene().add(stars);
+  [['#5b3cff', -1400, 300, -2200], ['#00b3ff', 1800, -400, -1200], ['#ff2fa8', 600, 700, 2200], ['#2b6bff', -2000, -300, 1400]].forEach(([col, x, y, z]) => {
+    const s = glowSprite(col, 3200, .035); s.position.set(x, y, z); Graph.scene().add(s);
+  });
+})();
+
+// bloom (optional — the page works without it)
+(async () => {
+  if (params.get('bloom') === '0') return;
+  try {
+    // The pass must share our three.js instance, otherwise the composer renders garbage.
+    // jsdelivr's +esm build resolves to the same three module URL as the import map; esm.sh with
+    // ?external=three (bare "three" → import map) is the fallback.
+    let mod;
+    try { mod = await import('https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/postprocessing/UnrealBloomPass.js/+esm'); }
+    catch { mod = await import('https://esm.sh/three@0.186.1/examples/jsm/postprocessing/UnrealBloomPass.js?external=three'); }
+    const bloom = new mod.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .7, .45, .55);
+    Graph.postProcessingComposer().addPass(bloom);
+  } catch (e) { console.warn('Bloom unavailable, continuing without it:', e); }
+})();
+
+// ───────────────────────── camera ─────────────────────────
+const cam = { angle: 0, mode: 'orbit', last: performance.now(), look: new THREE.Vector3(), tween: null };
+const V = o => new THREE.Vector3(o.x || 0, o.y || 0, o.z || 0);
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+function setCam(pos, look) { cam.look.copy(look); Graph.cameraPosition(pos, look); }
+function tweenTo(target, dur) {
+  cam.tween = { from: Graph.camera().position.clone(), fromLook: cam.look.clone(), target, t0: performance.now(), dur };
+  cam.mode = 'tween';
+  return sleep(dur);
+}
+const orbitR = () => 600 + Math.min(bots.size, 80) * 5;
+const orbitPos = () => { const R = orbitR(); return { x: Math.sin(cam.angle) * R, y: R * .3 + Math.sin(cam.angle * .6) * 60, z: Math.cos(cam.angle) * R }; };
+Graph.cameraPosition(orbitPos(), { x: 0, y: 0, z: 0 });
+
+// Frame the new bot on the left third of the screen (the arrival card covers the right half),
+// and keep following it while the simulation settles.
+async function flyTo(n) {
+  const N = V(n), D = 165;
+  const dir = N.clone().setY(N.y * .3); if (dir.length() < 1) dir.set(0, 0, 1); dir.normalize();
+  const right = dir.clone().negate().cross(new THREE.Vector3(0, 1, 0)).normalize();
+  const c = Graph.camera(), halfW = D * Math.tan(c.fov * Math.PI / 360) * (innerWidth / innerHeight);
+  const shift = innerWidth > 800 ? halfW * .45 : 0;
+  const lookOff = right.multiplyScalar(shift).add(new THREE.Vector3(0, 4, 0));
+  const posOff = lookOff.clone().add(dir.multiplyScalar(D)).add(new THREE.Vector3(0, 18, 0));
+  await tweenTo(() => { const P = V(n); return { pos: P.clone().add(posOff), look: P.add(lookOff) }; }, 1800);
+}
+async function backToOrbit() {
+  await tweenTo(() => ({ pos: V(orbitPos()), look: new THREE.Vector3() }), 1700);
+  cam.mode = 'orbit';
+}
+
+// ───────────────────────── animation loop ─────────────────────────
+const shockwaves = [];
+function frame(now) {
+  const dt = Math.min(100, now - cam.last); cam.last = now;
+  if (cam.mode === 'orbit') { cam.angle += dt * .00006; setCam(orbitPos(), new THREE.Vector3()); }
+  else {
+    const tw = cam.tween, e = ease(Math.min(1, (now - tw.t0) / tw.dur)), t = tw.target();
+    setCam(tw.from.clone().lerp(t.pos, e), tw.fromLook.clone().lerp(t.look, e));
+  }
+  for (const n of nodes) {
+    const f = n.fx3; if (!f) continue;
+    if (f.spin) { f.spin.rotation.z += dt * .0006; f.spin.rotation.y += dt * .0003; }
+    if (f.spin2) f.spin2.rotation.x += dt * .0004;
+    if (n.kind !== 'bot') continue;
+    const age = (now - f.born) / 1000;
+    const s = age < 1.2 ? 1 - Math.pow(2, -10 * age) * Math.cos(age * 9) : 1;
+    f.inner.scale.setScalar(Math.max(.01, s));
+    f.body.position.y = Math.sin(now * .0016 + n.phase) * 1.2;
+    if (now > f.blinkAt) {
+      const closed = now < f.blinkAt + 150;
+      f.core.material.map = mascotTex(n.color, closed);
+      if (!closed) f.blinkAt = now + 2500 + Math.random() * 4500;
+    }
+    let g = 30 + Math.sin(now * .002 + n.phase) * 2, b = 1;
+    if (f.pulse) {
+      const p = (now - f.pulse) / 1400;
+      if (p < 1) { g += Math.sin(p * Math.PI) * 40; b = 1 + Math.sin(p * Math.PI * 2) * .18 * (1 - p); }
+      else f.pulse = 0;
+    }
+    f.glow.scale.setScalar(g); f.body.scale.setScalar(b);
+    f.bubble.tick(now);
+  }
+  for (let i = shockwaves.length - 1; i >= 0; i--) {
+    const w = shockwaves[i], p = (now - w.t0) / 1800;
+    if (p >= 1) { w.sprite.parent?.remove(w.sprite); w.sprite.material.dispose(); shockwaves.splice(i, 1); continue; }
+    w.sprite.scale.setScalar(10 + p * 190); w.sprite.material.opacity = (1 - p) * .9;
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function shockwave(n, color) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+  n.__obj?.add(s); shockwaves.push({ sprite: s, t0: performance.now() });
+}
+
+// ───────────────────────── HUD ─────────────────────────
+$('eventName').textContent = C.EVENT_NAME || '';
+$('demoBadge').hidden = !DEMO;
+const trackRows = {};
+for (const t of [...TRACKS, NO_TRACK]) {
+  const row = document.createElement('div'); row.className = 'trk'; row.style.setProperty('--c', t.color);
+  const nm = document.createElement('span'); nm.className = 'name'; nm.textContent = t.label;
+  const bar = document.createElement('span'); bar.className = 'bar'; const fill = document.createElement('i'); bar.append(fill);
+  const cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.textContent = '0';
+  row.append(nm, bar, cnt); $('tracks').append(row);
+  trackRows[t.id ?? 'none'] = { row, fill, cnt, n: 0 };
+  if (!t.id) row.hidden = true;
+}
+function bump(id, v) { const el = $(id); el.textContent = v; el.classList.add('bump'); setTimeout(() => el.classList.remove('bump'), 350); }
+function renderStats() {
+  bump('cBots', bots.size); $('cUpdates').textContent = stats.updates;
+  const max = Math.max(1, ...Object.values(trackRows).map(r => r.n));
+  for (const [id, r] of Object.entries(trackRows)) {
+    r.fill.style.width = (r.n / max * 100) + '%'; r.cnt.textContent = r.n;
+    if (id === 'none') r.row.hidden = r.n === 0;
+    else if (hubs[id]?.countLabel) hubs[id].countLabel.text = `${r.n} bot${r.n === 1 ? '' : 's'}`;
+  }
+}
+
+function feed(icon, handle, color, msg) {
+  const li = document.createElement('li');
+  const t = document.createElement('span'); t.className = 't';
+  t.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const i = document.createElement('span'); i.textContent = icon;
+  const m = document.createElement('span'); m.className = 'm';
+  if (handle) { const h = document.createElement('span'); h.className = 'h'; h.style.color = color; h.textContent = '@' + handle + ' '; m.append(h); }
+  m.append(document.createTextNode(msg));
+  li.append(t, i, m);
+  const ul = $('feedList'); ul.prepend(li);
+  while (ul.children.length > 8) ul.lastChild.remove();
+}
+
+
+function setLive(state) {
+  const el = $('liveBadge');
+  el.className = 'live ' + (state === 'on' ? 'on' : 'warn');
+  el.querySelector('span').textContent = state === 'on' ? 'LIVE' : state === 'off' ? 'OFFLINE' : 'CONNECTING';
+}
+
+(function freezeClock() {
+  const now = new Date(), t = new Date(now); t.setHours(21, 50, 0, 0);
+  const d = t - now, el = $('freeze');
+  el.textContent = '';
+  if (d <= 0) { const b = document.createElement('b'); b.textContent = 'CODE FREEZE ✔'; el.append(b); }
+  else {
+    const p = n => String(n).padStart(2, '0'), s = Math.floor(d / 1000);
+    el.append('freeze in '); const b = document.createElement('b');
+    b.textContent = `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`; el.append(b);
+  }
+  setTimeout(freezeClock, 1000);
+})();
+
+(() => {
+  const target = C.X_POST_URL || new URL('join.html', location.href).href;
+  $('qrSmall').textContent = C.X_POST_URL ? 'your Grok Bot checks you in' : 'no Grok Bot? scan to join';
+  try { new QRCode($('qrcode'), { text: target, width: 256, height: 256, colorDark: '#05060f', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M }); }
+  catch (e) { console.warn('QR failed', e); $('qr').hidden = true; }
+})();
+setTimeout(() => $('keys').classList.add('fade'), 12000);
+
+// ───────────────────────── arrival card ─────────────────────────
+function showCard(n) {
+  const p = n.p, cls = botClass(p), card = $('arrival');
+  card.style.setProperty('--c', n.color);
+  $('aNum').textContent = '#' + String(n.num).padStart(2, '0');
+  $('aBot').textContent = p.bot;
+  $('aMascot').src = mascotTex(n.color, false).image.toDataURL();
+  $('aHandle').textContent = '@' + p.handle;
+  $('aName').textContent = p.name && p.name.toLowerCase() !== p.handle.toLowerCase() ? `· ${p.name}` : '';
+  $('aBuilding').textContent = p.building || 'something secret 🤫';
+  const chips = $('aChips'); chips.textContent = '';
+  const tc = document.createElement('span'); tc.className = 'chip track'; tc.textContent = (TRACK[p.track] || NO_TRACK).label; chips.append(tc);
+  for (const s of p.skills) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = s; chips.append(c); }
+  $('aIco').textContent = cls.icon; $('aClass').textContent = cls.name;
+  $('aFun').textContent = p.fun ? `“${p.fun}”` : '';
+  card.classList.add('show'); document.body.classList.add('arriving');
+  const fl = $('flash'); fl.style.setProperty('--c', n.color); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
+}
+const hideCard = () => { $('arrival').classList.remove('show'); document.body.classList.remove('arriving'); };
+
+// ───────────────────────── data → scene ─────────────────────────
+function addBot(row, { announce }) {
+  const p = sanitize(row);
+  if (!p || bots.has(p.key)) return null;
+  const t = TRACK[p.track] || NO_TRACK;
+  const parent = p.track ? hubs[p.track] : HQ;
+  const px = parent.fx ?? 0, py = parent.fy ?? 0, pz = parent.fz ?? 0;
+  const n = {
+    id: 'bot:' + p.key, kind: 'bot', p, color: t.color, num: ++stats.arrivals, phase: Math.random() * 6,
+    x: px + (Math.random() - .5) * 40, y: py + (Math.random() - .5) * 40, z: pz + (Math.random() - .5) * 40,
+  };
+  const pend = pendingUpdates.get(p.key);
+  if (pend) { n.text = pend; n.tag = '● UPDATE'; pendingUpdates.delete(p.key); }
+  nodes.push(n); bots.set(p.key, n);
+  links.push({ source: parent.id, target: n.id, kind: 'bot', color: t.color });
+  trackRows[p.track ?? 'none'].n++;
+
+  refresh(); renderStats();
+
+  if (announce) {
+    feed('🛰️', p.handle, t.color, `${p.bot} came online · ${p.building || t.label}`);
+    setTimeout(() => shockwave(n, t.color), 900);
+  }
+  return n;
+}
+
+function applyUpdate(row, { animate }) {
+  const key = clean(row.x_handle, 40).replace(/^@+/, '').toLowerCase();
+  const text = clean(row.text, 120);
+  if (!key || !text) return;
+  stats.updates++;
+  const n = bots.get(key);
+  if (!n) { pendingUpdates.set(key, text); renderStats(); return; }
+  n.text = text; n.tag = '● UPDATE';
+  if (n.fx3) { n.fx3.bubble.set(text, '● UPDATE', animate); if (animate) n.fx3.pulse = performance.now(); }
+  if (animate) feed('💬', n.p.handle, n.color, text);
+  renderStats();
+}
+
+// Arrival queue: one cinematic moment at a time.
+const queue = []; let busy = false;
+function enqueue(row) { queue.push(row); runQueue(); }
+async function runQueue() {
+  if (busy) return; busy = true;
+  while (queue.length) {
+    const n = addBot(queue.shift(), { announce: true });
+    if (!n) continue;
+    await sleep(600);
+    await flyTo(n);
+    showCard(n);
+    await sleep(queue.length > 2 ? 2600 : 4200);
+    hideCard();
+    await backToOrbit();
+  }
+  busy = false;
+}
+
+// ───────────────────────── demo mode ─────────────────────────
+const SEED = [
+  ['Ada Okafor', 'adaokafor_dev', 'Nimbus', 'A doorman bot that verifies RSVPs from a QR selfie', ['python', 'computer-vision', 'fastapi'], 'gatekeeper', 'Once debugged a toaster over SSH'],
+  ['Kenji Mori', 'kenji_builds', 'Pixel-9', 'Member graph that tells you who to meet based on what you starred', ['graphs', 'react', 'neo4j'], 'know-your-members', 'Has 41 unfinished side projects'],
+  ['Priya Raman', 'priyaships', 'Cadence', 'Agent that auto-books rooms, pizza and reminders for meetups', ['llm', 'agents', 'typescript'], 'event-autopilot', 'Can solve a Rubik’s cube in 40s'],
+  ['Tom Hale', 'tomhale_codes', 'Atlas', 'Crowdsourced open DB of London venues with wifi + plug ratings', ['postgres', 'sql', 'maps'], 'open-venue-db', 'Knows every Zone 1 café with sockets'],
+  ['Maya Lindqvist', 'maya_lq', 'Ledger', 'Front desk upsell bot that sells merch while it checks you in', ['stripe', 'payments', 'react'], 'front-desk-revenue', 'Ex-barista, still judges your latte art'],
+  ['Sol Mendez', 'solmendez', 'Moth', 'A bot that writes haikus about your git diffs', ['llm', 'poetry', 'rust'], 'weird-stuff', 'Owns three identical black hoodies'],
+  ['Ife Adeyemi', 'ife_ai', 'Sentry Owl', 'Badge scanner that flags tailgaters at the door', ['security', 'auth', 'iot'], 'gatekeeper', 'Picks locks as a hobby (legally)'],
+  ['Lars Becker', 'larsbecker', 'Kite', 'Weekly digest of who is new in the community and what they ship', ['python', 'nlp', 'community'], 'know-your-members', 'Ran a marathon in a dinosaur suit'],
+  ['Noor Haddad', 'noorhaddad', 'Tempo', 'Calendar agent that negotiates the least-bad Thursday for everyone', ['agents', 'typescript', 'calendar-api'], 'event-autopilot', 'Has never been late. Not once.'],
+  ['Wei Zhang', 'weizhang_dev', 'Quarry', 'Scraper + API for venue capacity and step-free access', ['scraping', 'go', 'postgres'], 'open-venue-db', 'Speaks four languages, codes in six'],
+  ['Chloe Martin', 'chloemakes', 'Till', 'Tap-to-tip kiosk with a live leaderboard for the bar', ['react', 'payments', 'design'], 'front-desk-revenue', 'Built her first website on GeoCities'],
+  ['Dev Patel', 'devpatel_io', 'Glitch', 'Generative music from the room’s Wi-Fi traffic', ['audio', 'rust', '3d'], 'weird-stuff', 'Plays the theremin badly'],
+  ['Zara Ahmed', 'zara_builds', 'Echo', 'Voice check-in that greets you using your X bio', ['voice', 'llm', 'python'], 'gatekeeper', 'Talks to her plants in Python'],
+  ['Oskar Nilsson', 'oskar_n', 'Beacon', 'Skill matching that forms balanced teams in under 60 seconds', ['ml', 'embeddings', 'react'], 'know-your-members', 'Built a sauna out of a shipping container'],
+  ['Fatima Bello', 'fatimab', 'Relay', 'Auto-writes the post-event recap thread with photos', ['llm', 'content', 'typescript'], 'event-autopilot', 'Has a 900-day Duolingo streak'],
+].map(([display_name, x_handle, bot_name, building, skills, track, fun_fact]) => ({ display_name, x_handle, bot_name, building, skills, track, fun_fact }));
+
+const POOL = {
+  first: ['Amara', 'Ben', 'Carys', 'Diego', 'Elif', 'Finn', 'Grace', 'Hugo', 'Isla', 'Jonah', 'Kemi', 'Leo', 'Mira', 'Nadia', 'Omar', 'Pia', 'Quinn', 'Rhys', 'Sana', 'Theo', 'Uma', 'Vik', 'Wren', 'Yara'],
+  last: ['Ashby', 'Brook', 'Costa', 'Doyle', 'Evans', 'Fox', 'Gill', 'Hart', 'Iqbal', 'Jones', 'Khan', 'Lowe', 'Moss', 'Ng', 'Owusu', 'Price', 'Reid', 'Shah', 'Tran', 'Vance'],
+  bot: ['Orbit', 'Wisp', 'Cobalt', 'Juniper', 'Flux', 'Pebble', 'Sprocket', 'Halo', 'Vesper', 'Nova', 'Ripple', 'Bramble', 'Quill', 'Zephyr', 'Marlow', 'Tinker', 'Pulse', 'Lumen'],
+  skills: ['python', 'typescript', 'react', 'rust', 'go', 'llm', 'agents', 'postgres', 'design', 'security', 'ml', 'payments', 'iot', '3d', 'community', 'embeddings', 'nlp', 'devops'],
+  ideas: {
+    'gatekeeper': ['Face-free check-in using a one-time emoji handshake', 'Bouncer bot that spots duplicate tickets in real time', 'NFC wristband check-in with a fallback chat flow'],
+    'know-your-members': ['“Who should I talk to?” bot for shy first-timers', 'Turns your X bio into a 3-word superpower badge', 'Map of who-knows-what across the whole community'],
+    'event-autopilot': ['Agent that orders the right amount of pizza, live', 'Auto-schedules lightning talks by energy level', 'Bot that runs the hackathon timer and nags politely'],
+    'open-venue-db': ['Open dataset of venues that welcome hackathons', 'Rates venues by wifi speed, measured by bots', 'Venue finder that filters by power sockets per seat'],
+    'front-desk-revenue': ['Merch drop that unlocks when your PR merges', 'Dynamic pricing for late-night coffee', 'Sponsor matchmaking at the front desk'],
+    'weird-stuff': ['A bot that only communicates in ASCII art', 'Plant that tweets when the room gets too loud', 'Rubber duck that actually answers back'],
+  },
+  fun: ['Has a cat called Kubernetes', 'Commits only on full moons', 'Owns 14 mechanical keyboards', 'Once deployed to prod from a ferry', 'Can name every London tube station', 'Writes code in dark mode, lives in light mode', 'Thinks tabs vs spaces is solved (it’s tabs)'],
+};
+const UPDATES = [
+  'auth flow works end to end 🎉', 'pivoting to a CLI, the UI was eating us alive', 'first real user just signed up!', 'demo video recorded, now fixing everything it exposed',
+  'deployed to Vercel, it actually loads', 'pair-programming with my bot, it is winning', 'swapped the DB schema for the 3rd time', 'got realtime working, goosebumps',
+  'pizza acquired, morale +40%', 'wrote tests. one passes. progress.', 'the bot just suggested a better name for the project', 'shipping v0.1 before code freeze 🚀',
+  'found the bug: it was a timezone', 'README written, therefore it exists',
+];
+const pick = a => a[Math.floor(Math.random() * a.length)];
+let spawnN = 0;
+function fakeAttendee() {
+  const f = pick(POOL.first), l = pick(POOL.last), track = pick(TRACKS).id;
+  const skills = [...new Set([pick(POOL.skills), pick(POOL.skills), pick(POOL.skills)])];
+  return {
+    display_name: `${f} ${l}`, x_handle: `${f}${l}`.toLowerCase() + (++spawnN),
+    bot_name: pick(POOL.bot) + (Math.random() < .3 ? '-' + Math.floor(Math.random() * 99) : ''),
+    building: pick(POOL.ideas[track]), skills, track, fun_fact: pick(POOL.fun), created_at: new Date().toISOString(),
+  };
+}
+const demoState = { auto: false, timer: null, upTimer: null };
+function demoUpdateLoop() {
+  clearTimeout(demoState.upTimer);
+  demoState.upTimer = setTimeout(() => {
+    if (demoState.auto && bots.size && !busy) applyUpdate({ x_handle: pick([...bots.values()]).p.handle, text: pick(UPDATES) }, { animate: true });
+    demoUpdateLoop();
+  }, 4000 + Math.random() * 5000);
+}
+function setAuto(on) {
+  demoState.auto = on; clearInterval(demoState.timer);
+  if (on) { demoState.timer = setInterval(() => { if (queue.length < 2) enqueue(fakeAttendee()); }, 6000); demoUpdateLoop(); }
+  else clearTimeout(demoState.upTimer);
+  feed(on ? '▶️' : '⏸️', '', '', `demo auto-spawn ${on ? 'on' : 'off'}`);
+}
+
+async function startDemo() {
+  setLive('demo');
+  $('liveBadge').querySelector('span').textContent = 'SIMULATED';
+  for (const r of SEED) { addBot(r, { announce: false }); await sleep(140); }
+  for (let i = 0; i < 4; i++) applyUpdate({ x_handle: pick(SEED).x_handle, text: pick(UPDATES) }, { animate: false });
+  feed('🛰️', '', '', `${SEED.length} demo bots in orbit`);
+  await sleep(2500);
+  enqueue(fakeAttendee());
+  setAuto(true);
+}
+
+// ───────────────────────── live mode (Supabase) ─────────────────────────
+async function startLive() {
+  setLive('connecting');
+  const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
+  const [{ data: rows, error: e1 }, { data: ups, error: e2 }] = await Promise.all([
+    sb.from('checkins').select('*').order('created_at', { ascending: true }).limit(1000),
+    sb.from('updates').select('*').order('created_at', { ascending: true }).limit(2000),
+  ]);
+  if (e1 || e2) { console.error('Supabase load failed', e1 || e2); setLive('off'); feed('⚠️', '', '', 'could not reach Supabase — check CONFIG'); }
+  for (const r of rows || []) addBot(r, { announce: false });
+  for (const u of ups || []) applyUpdate(u, { animate: false });
+  feed('📡', '', '', `connected · ${bots.size} bots already in orbit`);
+  sb.channel('constellation')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'checkins' }, p => enqueue(p.new))
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'updates' }, p => applyUpdate(p.new, { animate: true }))
+    .subscribe(status => setLive(status === 'SUBSCRIBED' ? 'on' : status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED' ? 'off' : 'connecting'));
+}
+
+// ───────────────────────── keyboard ─────────────────────────
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 's') enqueue(fakeAttendee());
+  else if (k === 'd') setAuto(!demoState.auto);
+  else if (k === 'h') document.body.classList.toggle('hud-hidden');
+  else if (k === 'f') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => {});
+});
+
+renderStats();
+DEMO ? startDemo() : startLive();
+</script>
+</body>
+</html>
