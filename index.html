@@ -35,7 +35,8 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #01010a; color: var(--fg); font-family: var(--sans); overflow: hidden; }
-  #graph { position: fixed; inset: 0; }
+  #scene { position: fixed; inset: 0; }
+  #scene canvas { display: block; }
   .hud { position: fixed; z-index: 5; transition: opacity .5s; pointer-events: none; }
   body.hud-hidden .hud, body.arriving #qr, body.arriving #stats { opacity: 0; }
   .panel { background: var(--glass); border: 1px solid var(--edge); border-radius: 18px; backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); }
@@ -137,7 +138,7 @@
 </style>
 </head>
 <body>
-<div id="graph"></div>
+<div id="scene"></div>
 <div id="flash"></div>
 
 <div id="title" class="hud">
@@ -179,8 +180,9 @@
 
 <script type="module">
 import * as THREE from 'three';
-import ForceGraph3D from 'https://cdn.jsdelivr.net/npm/3d-force-graph@1.80.1/+esm';
 import SpriteText from 'https://cdn.jsdelivr.net/npm/three-spritetext@1.10.0/dist/three-spritetext.mjs';
+import { RoundedBoxGeometry } from 'https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/geometries/RoundedBoxGeometry.js/+esm';
+import { RoomEnvironment } from 'https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/environments/RoomEnvironment.js/+esm';
 
 const C = window.CONFIG;
 const params = new URLSearchParams(location.search);
@@ -190,20 +192,22 @@ const FONT = "'Space Grotesk', system-ui, sans-serif";
 const MONO = "'JetBrains Mono', ui-monospace, monospace";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const rand = (a, b) => a + Math.random() * (b - a);
 // Wait for web fonts so canvas/sprite text renders in the right face.
 await Promise.race([document.fonts.ready, sleep(2500)]);
 
 // ───────────────────────── tracks & helpers ─────────────────────────
+// Body colours follow the Grok Bot avatar palette; `ui` is the brighter tint used for glow and text.
 const TRACKS = [
-  { id: 'gatekeeper',         label: 'Gatekeeper',         color: '#ff3b6b' },
-  { id: 'know-your-members',  label: 'Know Your Members',  color: '#3bf0ff' },
-  { id: 'event-autopilot',    label: 'Event Autopilot',    color: '#8f6bff' },
-  { id: 'open-venue-db',      label: 'Open Venue DB',      color: '#39ff88' },
-  { id: 'front-desk-revenue', label: 'Front Desk Revenue', color: '#ff8a1f' },
-  { id: 'weird-stuff',        label: 'Weird Stuff',        color: '#ff4fd8' },
+  { id: 'gatekeeper',         label: 'Gatekeeper',         color: '#e5534b', ui: '#ff6b62' },
+  { id: 'know-your-members',  label: 'Know Your Members',  color: '#3fb8a9', ui: '#4fe3cf' },
+  { id: 'event-autopilot',    label: 'Event Autopilot',    color: '#8b5cf6', ui: '#a98bff' },
+  { id: 'open-venue-db',      label: 'Open Venue DB',      color: '#5cc77a', ui: '#6cf091' },
+  { id: 'front-desk-revenue', label: 'Front Desk Revenue', color: '#ee9a3a', ui: '#ffb04f' },
+  { id: 'weird-stuff',        label: 'Weird Stuff',        color: '#dd5fb8', ui: '#ff7ad6' },
 ];
 const TRACK = Object.fromEntries(TRACKS.map(t => [t.id, t]));
-const NO_TRACK = { id: null, label: 'Free Roaming', color: '#c9d4ff' };
+const NO_TRACK = { id: null, label: 'Free Roaming', color: '#16161c', ui: '#c9d4ff' };
 
 // All user-supplied text is untrusted: strip control chars, cap length, and only ever
 // render it via textContent (DOM) or canvas fillText (sprites).
@@ -220,7 +224,6 @@ function sanitize(r) {
     skills,
     track: TRACK[r.track] ? r.track : null,
     fun: clean(r.fun_fact, 80),
-    at: r.created_at ? new Date(r.created_at) : new Date(),
   };
 }
 const hash = s => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
@@ -243,76 +246,280 @@ function botClass(p) {
   return { name: `${ADJ[hash(p.key) % ADJ.length]} ${best[0]}`, icon: best[1] };
 }
 
-// ───────────────────────── textures & sprites ─────────────────────────
-function canvasTex(c) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
-const glowTex = (() => {
-  const s = 128, c = document.createElement('canvas'); c.width = c.height = s;
-  const g = c.getContext('2d'), gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.18, 'rgba(255,255,255,.6)');
-  gr.addColorStop(.45, 'rgba(255,255,255,.14)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = gr; g.fillRect(0, 0, s, s); return canvasTex(c);
+// ───────────────────────── renderer, scene, camera ─────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+$('scene').append(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#02030a');
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), .04).texture;
+scene.environmentIntensity = .45;
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, .1, 4000);
+
+let composer = null;
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); composer?.setSize(innerWidth, innerHeight);
+});
+
+// Bloom is optional: if any add-on fails to load we keep rendering without it.
+(async () => {
+  if (params.get('bloom') === '0') return;
+  try {
+    const base = 'https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/postprocessing/';
+    const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all(
+      ['EffectComposer', 'RenderPass', 'UnrealBloomPass', 'OutputPass'].map(n => import(`${base}${n}.js/+esm`)));
+    const c = new EffectComposer(renderer);
+    c.addPass(new RenderPass(scene, camera));
+    c.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .55, .45, .9));
+    c.addPass(new OutputPass());
+    composer = c;
+  } catch (e) { console.warn('Bloom unavailable, continuing without it:', e); }
 })();
-const ringTex = (() => {
-  const s = 256, c = document.createElement('canvas'); c.width = c.height = s;
-  const g = c.getContext('2d'); g.strokeStyle = '#fff'; g.lineWidth = 6; g.shadowColor = '#fff'; g.shadowBlur = 16;
-  g.beginPath(); g.arc(s / 2, s / 2, s / 2 - 20, 0, Math.PI * 2); g.stroke(); return canvasTex(c);
+
+// ───────────────────────── textures ─────────────────────────
+function canvas(w, h = w) { const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d')]; }
+function canvasTex(c) { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; }
+const radialTex = (stops) => {
+  const [c, g] = canvas(128), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  stops.forEach(([o, a]) => gr.addColorStop(o, `rgba(255,255,255,${a})`));
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return canvasTex(c);
+};
+const glowTex = radialTex([[0, 1], [.2, .55], [.5, .12], [1, 0]]);
+const shadowTex = (() => {
+  const [c, g] = canvas(128), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(0,0,0,.65)'); gr.addColorStop(.6, 'rgba(0,0,0,.25)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return canvasTex(c);
 })();
-// Cute bot mascot: rounded head, dark face screen, big glowing eyes, antenna, smile.
-// Two textures per colour (eyes open / happy-closed) so bots can blink by swapping maps.
-const mascotCache = {};
-function mascotTex(color, blink) {
-  const k = color + blink; if (mascotCache[k]) return mascotCache[k];
-  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
-  const g = c.getContext('2d');
-  const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect(x, y, w, h, r); };
-  // antenna
-  g.strokeStyle = '#c9d2ff'; g.lineWidth = 7; g.lineCap = 'round';
-  g.beginPath(); g.moveTo(128, 62); g.lineTo(128, 30); g.stroke();
-  g.shadowColor = color; g.shadowBlur = 22; g.fillStyle = color;
-  g.beginPath(); g.arc(128, 26, 12, 0, Math.PI * 2); g.fill();
-  // ears
-  g.shadowBlur = 0; g.fillStyle = '#c9d2ff';
-  rr(22, 112, 22, 50, 10); g.fill(); rr(212, 112, 22, 50, 10); g.fill();
-  // head
-  const hg = g.createLinearGradient(0, 60, 0, 220); hg.addColorStop(0, '#ffffff'); hg.addColorStop(1, '#cfd6f5');
-  g.fillStyle = hg; rr(36, 60, 184, 160, 62); g.fill();
-  // face screen
-  g.fillStyle = '#070a18'; rr(56, 82, 144, 112, 44); g.fill();
-  g.strokeStyle = color; g.globalAlpha = .55; g.lineWidth = 3; g.stroke(); g.globalAlpha = 1;
-  // eyes
-  g.shadowColor = color; g.shadowBlur = 26; g.fillStyle = '#ffffff'; g.strokeStyle = '#ffffff';
-  for (const ex of [100, 156]) {
-    if (blink) {
-      g.lineWidth = 8; g.lineCap = 'round';
-      g.beginPath(); g.arc(ex, 140, 14, Math.PI * 1.15, Math.PI * 1.85); g.stroke();
-    } else {
-      g.beginPath(); g.ellipse(ex, 132, 15, 21, 0, 0, Math.PI * 2); g.fill();
-      g.shadowBlur = 0; g.fillStyle = color;
-      g.beginPath(); g.ellipse(ex + 2, 136, 8, 12, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#ffffff'; g.beginPath(); g.arc(ex + 5, 128, 4.5, 0, Math.PI * 2); g.fill();
-      g.shadowBlur = 26;
-    }
-  }
-  // blush + smile
-  g.shadowBlur = 0; g.fillStyle = 'rgba(255, 120, 170, .45)';
-  g.beginPath(); g.ellipse(80, 166, 11, 6, 0, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.ellipse(176, 166, 11, 6, 0, 0, Math.PI * 2); g.fill();
-  g.strokeStyle = '#ffffff'; g.lineWidth = 5; g.lineCap = 'round';
-  g.beginPath(); g.arc(128, 162, 11, Math.PI * .15, Math.PI * .85); g.stroke();
-  return (mascotCache[k] = canvasTex(c));
-}
+const beamTex = (() => {
+  const [c, g] = canvas(4, 256), gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(.7, 'rgba(255,255,255,.35)'); gr.addColorStop(1, 'rgba(255,255,255,1)');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256); return canvasTex(c);
+})();
 const glowSprite = (color, scale, opacity = .8) => {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity }));
   s.scale.setScalar(scale); return s;
 };
 function label(text, height, color, weight = '700', font = FONT) {
   const t = new SpriteText(text, height, color);
-  t.fontFace = font; t.fontWeight = weight; t.strokeWidth = 0.5; t.strokeColor = 'rgba(0,0,0,.85)';
+  t.fontFace = font; t.fontWeight = weight; t.strokeWidth = .6; t.strokeColor = 'rgba(0,0,0,.9)';
   t.material.depthWrite = false; t.renderOrder = 5; return t;
 }
 
+// ───────────────────────── the starship lounge ─────────────────────────
+const ROOM = 36;           // wall circumradius
+const DECK = 29;           // walkable radius
+const hullMat = new THREE.MeshStandardMaterial({ color: '#2a3144', roughness: .45, metalness: .55 });
+const neon = (color, opacity = 1) => new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, toneMapped: false });
+const flat = (mesh, y) => { mesh.rotation.x = -Math.PI / 2; mesh.position.y = y; return mesh; };
+
+// floor: steel deck plates with a soft centre falloff
+(() => {
+  const S = 2048, [c, g] = canvas(S);
+  const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  gr.addColorStop(0, '#3b4560'); gr.addColorStop(.7, '#262d40'); gr.addColorStop(1, '#161a26');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  const n = 28, step = S / n;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    const h = (i * 7 + j * 13) % 7;
+    if (h === 0) { g.fillStyle = 'rgba(150,180,255,.06)'; g.fillRect(i * step + 6, j * step + 6, step - 12, step - 12); }
+    g.fillStyle = 'rgba(200,220,255,.18)';
+    for (const [dx, dy] of [[10, 10], [step - 10, 10], [10, step - 10], [step - 10, step - 10]]) { g.beginPath(); g.arc(i * step + dx, j * step + dy, 2.5, 0, 7); g.fill(); }
+  }
+  g.strokeStyle = 'rgba(10,12,20,.8)'; g.lineWidth = 4;
+  for (let i = 0; i <= n; i++) { g.beginPath(); g.moveTo(i * step, 0); g.lineTo(i * step, S); g.stroke(); g.beginPath(); g.moveTo(0, i * step); g.lineTo(S, i * step); g.stroke(); }
+  const floor = flat(new THREE.Mesh(new THREE.CircleGeometry(ROOM, 8, Math.PI / 8), new THREE.MeshStandardMaterial({ map: canvasTex(c), roughness: .5, metalness: .4 })), 0);
+  floor.rotation.z = 0; scene.add(floor);
+  for (const [r, w, col, op] of [[DECK + .8, .12, '#5fd4ff', .55], [DECK + 1.6, .05, '#5fd4ff', .3], [11, .08, '#5fd4ff', .25]]) {
+    scene.add(flat(new THREE.Mesh(new THREE.RingGeometry(r - w, r, 128), neon(col, op)), .02));
+  }
+})();
+
+// walls: octagonal bulkheads with tall windows onto space
+(() => {
+  const SIDES = 8, side = 2 * ROOM * Math.sin(Math.PI / SIDES), ap = ROOM * Math.cos(Math.PI / SIDES);
+  const glassMat = new THREE.MeshBasicMaterial({ color: '#7fb0ff', transparent: true, opacity: .045, depthWrite: false, side: THREE.DoubleSide });
+  for (let i = 0; i < SIDES; i++) {
+    const a = (i + .5) / SIDES * Math.PI * 2;
+    const seg = new THREE.Group();
+    seg.position.set(Math.cos(a) * ap, 0, Math.sin(a) * ap); seg.lookAt(0, 0, 0);
+    const box = (w, h, d, x, y, z, m = hullMat) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); seg.add(b); return b; };
+    box(side, 2.6, 1.2, 0, 1.3, 0);                                   // bulkhead
+    box(side * .9, .1, .05, 0, 2.2, .62, neon('#5fd4ff'));            // light strip
+    box(side * .3, .5, .05, -side * .25, 1.2, .62, neon('#1d2840'));  // panel
+    box(side, .9, 1.4, 0, 13.4, 0);                                    // header beam
+    box(side * .9, .08, .05, 0, 12.9, .72, neon('#5fd4ff', .7));
+    box(side, .22, .35, 0, 7.8, 0);                                    // window transom
+    box(.7, 14, 1.5, -side / 2, 7, 0);                                 // mullion
+    box(.08, 10.6, .05, -side / 2 + .4, 7.8, .76, neon('#5fd4ff', .6));
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(side, 10.4), glassMat); glass.position.y = 7.8; seg.add(glass);
+    scene.add(seg);
+    // dome strut from wall top to the crown ring
+    const p0 = new THREE.Vector3(Math.cos(a - Math.PI / SIDES) * ROOM, 13.8, Math.sin(a - Math.PI / SIDES) * ROOM);
+    const p1 = new THREE.Vector3(Math.cos(a - Math.PI / SIDES) * 11, 25, Math.sin(a - Math.PI / SIDES) * 11);
+    const strut = new THREE.Mesh(new THREE.CylinderGeometry(.22, .3, p0.distanceTo(p1), 8), hullMat);
+    strut.position.copy(p0).add(p1).multiplyScalar(.5);
+    strut.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p1.clone().sub(p0).normalize());
+    scene.add(strut);
+  }
+  const crown = new THREE.Mesh(new THREE.TorusGeometry(11, .35, 12, 96), hullMat); crown.rotation.x = Math.PI / 2; crown.position.y = 25; scene.add(crown);
+  const crownGlow = new THREE.Mesh(new THREE.TorusGeometry(11, .08, 8, 96), neon('#5fd4ff', .8)); crownGlow.rotation.x = Math.PI / 2; crownGlow.position.y = 24.6; scene.add(crownGlow);
+})();
+
+// outside: stars, a gas giant, a moon, nebula haze
+(() => {
+  const N = 6000, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), c = new THREE.Color();
+  for (let i = 0; i < N; i++) {
+    const r = 900 + Math.random() * 1500, u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+    pos.set([r * s * Math.cos(th), r * Math.abs(u) * .9 + 20, r * s * Math.sin(th)], i * 3);
+    c.setHSL(.55 + Math.random() * .2, .4, .65 + Math.random() * .35); col.set([c.r, c.g, c.b], i * 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ size: 1.8, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: .9, depthWrite: false })));
+
+  const [pc, pg] = canvas(1024, 512);
+  for (let y = 0; y < 512; y++) {
+    const t = y / 512, w = Math.sin(t * 38) * .5 + Math.sin(t * 91 + 1) * .25;
+    pg.fillStyle = `hsl(${262 + w * 30 + t * 40}, ${45 + w * 20}%, ${42 + w * 14 - Math.abs(t - .5) * 20}%)`;
+    pg.fillRect(0, y, 1024, 1);
+  }
+  pg.fillStyle = 'rgba(255,170,120,.35)'; pg.beginPath(); pg.ellipse(640, 300, 70, 26, 0, 0, 7); pg.fill();
+  const planet = new THREE.Mesh(new THREE.SphereGeometry(260, 64, 48), new THREE.MeshStandardMaterial({ map: canvasTex(pc), roughness: 1, metalness: 0 }));
+  planet.position.set(-1100, 230, -1500); planet.rotation.z = .35; scene.add(planet);
+  const atmo = glowSprite('#8fb2ff', 820, .45); atmo.position.copy(planet.position).multiplyScalar(1.02); scene.add(atmo);
+  const ringP = new THREE.Mesh(new THREE.RingGeometry(330, 470, 128), new THREE.MeshBasicMaterial({ color: '#c9b6ff', transparent: true, opacity: .18, side: THREE.DoubleSide, depthWrite: false }));
+  ringP.position.copy(planet.position); ringP.rotation.set(1.25, .2, .35); scene.add(ringP);
+  const moon = new THREE.Mesh(new THREE.SphereGeometry(55, 32, 24), new THREE.MeshStandardMaterial({ color: '#b9c2d8', roughness: 1 }));
+  moon.position.set(1300, 200, -900); scene.add(moon);
+  [['#5b3cff', -1400, 500, 900], ['#00b3ff', 1300, 400, 1100], ['#ff2fa8', 900, 600, -1500]].forEach(([col, x, y, z]) => {
+    const s = glowSprite(col, 2600, .06); s.position.set(x, y, z); scene.add(s);
+  });
+})();
+
+// lights
+scene.add(new THREE.HemisphereLight('#bcd2ff', '#1a1f2c', 1.1));
+const sun = new THREE.DirectionalLight('#ffe9d2', 1.6); sun.position.set(30, 60, 20); scene.add(sun);
+
+// centre: the check-in teleporter + HQ hologram
+const pad = (() => {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.6, .4, 64), hullMat); base.position.y = .2; g.add(base);
+  g.add(flat(new THREE.Mesh(new THREE.RingGeometry(3.4, 3.7, 96), neon('#5fd4ff')), .42));
+  g.add(flat(new THREE.Mesh(new THREE.CircleGeometry(3.4, 96), new THREE.MeshBasicMaterial({ color: '#5fd4ff', transparent: true, opacity: .12 })), .41));
+  const beamMat = new THREE.MeshBasicMaterial({ map: beamTex, color: '#7fe0ff', transparent: true, opacity: .12, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false });
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(3.3, 3.5, 16, 64, 1, true), beamMat); beam.position.y = 8.4; g.add(beam);
+  const holo = new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 1), new THREE.MeshBasicMaterial({ color: '#9fe6ff', wireframe: true, transparent: true, opacity: .7 }));
+  holo.position.y = 10.5; g.add(holo);
+  const t1 = label('EXPEDITE LONDON HQ', .7, '#bfeeff'); t1.position.y = 12.6; g.add(t1);
+  const t2 = label('CHECK-IN BEAM', .42, '#5fd4ff', '400', MONO); t2.position.y = 12; g.add(t2);
+  scene.add(g);
+  return { beamMat, holo };
+})();
+
+// track stations around the deck
+const stations = {};
+TRACKS.forEach((t, i) => {
+  const a = i / TRACKS.length * Math.PI * 2 + Math.PI / 6, R = 19.5;
+  const center = new THREE.Vector3(Math.cos(a) * R, 0, Math.sin(a) * R);
+  const g = new THREE.Group(); g.position.copy(center);
+  g.add(flat(new THREE.Mesh(new THREE.CircleGeometry(5.6, 96), new THREE.MeshBasicMaterial({ color: t.ui, transparent: true, opacity: .09, depthWrite: false })), .03));
+  g.add(flat(new THREE.Mesh(new THREE.RingGeometry(5.4, 5.6, 96), neon(t.ui, .85)), .04));
+  // console pillar on the outer edge with a holo sign
+  const out = center.clone().normalize().multiplyScalar(6.4);
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(.3, .45, 4.6, 16), hullMat); pillar.position.set(out.x, 2.3, out.z); g.add(pillar);
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(.45, 24, 16), neon(t.ui)); orb.position.set(out.x, 4.9, out.z); g.add(orb);
+  const sign = label(t.label.toUpperCase(), .8, t.ui); sign.position.set(out.x, 6.3, out.z); g.add(sign);
+  const count = label('0 bots', .45, '#ffffff', '400', MONO); count.position.set(out.x, 5.6, out.z); g.add(count);
+  const light = new THREE.PointLight(t.ui, 16, 14, 2); light.position.y = 3; g.add(light);
+  scene.add(g);
+  stations[t.id] = { center, count, orb };
+});
+
+// floating dust motes catching the light
+const motes = (() => {
+  const N = 500, pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) { const r = Math.sqrt(Math.random()) * DECK, a = Math.random() * 7; pos.set([Math.cos(a) * r, Math.random() * 14, Math.sin(a) * r], i * 3); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ map: glowTex, size: .25, color: '#9fdcff', transparent: true, opacity: .55, depthWrite: false, blending: THREE.AdditiveBlending }));
+  scene.add(pts); return geo;
+})();
+
+// ───────────────────────── Grok Bot mascots ─────────────────────────
+// Each bot is a glossy shape in its track colour with two tilted pill eyes.
+const SHAPES = ['circle', 'pebble', 'squircle', 'capsule', 'triangle', 'hexagon', 'cloud', 'droplet'];
+function shapeGeos(shape) {
+  switch (shape) {
+    case 'circle': return [[new THREE.SphereGeometry(.85, 40, 28)]];
+    case 'pebble': { const g = new THREE.SphereGeometry(.85, 40, 28); g.scale(1.18, .82, .95); g.rotateZ(-.12); return [[g]]; }
+    case 'squircle': return [[new RoundedBoxGeometry(1.55, 1.55, 1.3, 6, .5)]];
+    case 'capsule': { const g = new THREE.CapsuleGeometry(.6, .9, 10, 32); g.rotateZ(Math.PI / 2); return [[g]]; }
+    case 'triangle': {
+      const pts = []; for (let i = 0; i <= 24; i++) { const t = i / 24; pts.push(new THREE.Vector2(Math.max(.001, (1 - t) * 1.0 + Math.sin(t * Math.PI) * .12), t * 1.6)); }
+      return [[new THREE.LatheGeometry(pts, 48)]];
+    }
+    case 'hexagon': { const g = new THREE.CylinderGeometry(.95, .95, 1.1, 6); g.rotateX(Math.PI / 2); g.rotateZ(Math.PI / 6); return [[g]]; }
+    case 'cloud': return [[new THREE.SphereGeometry(.6, 28, 20), [-.5, -.1, 0]], [new THREE.SphereGeometry(.72, 28, 20), [.15, .1, 0]], [new THREE.SphereGeometry(.55, 28, 20), [.7, -.15, 0]], [new THREE.SphereGeometry(.5, 28, 20), [-.05, .55, -.1]]];
+    case 'droplet': {
+      const pts = []; for (let i = 0; i <= 40; i++) { const th = Math.PI - i / 40 * Math.PI; pts.push(new THREE.Vector2(Math.sin(th) * Math.sin(th / 2) * 1.05, Math.cos(th) * .95)); }
+      return [[new THREE.LatheGeometry(pts, 48)]];
+    }
+  }
+}
+const eyeGeo = (() => { const g = new THREE.CapsuleGeometry(.11, .26, 6, 16); g.scale(1, 1, .45); return g; })();
+const eyeMat = new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false });
+const BOT_SCALE = 1.45;
+const shapeCache = {};
+// Build the body once per shape: centre it, sit it on y=0, and raycast the front surface to place the eyes.
+function shapeTemplate(shape) {
+  if (shapeCache[shape]) return shapeCache[shape];
+  const parts = shapeGeos(shape), tmp = new THREE.Group();
+  for (const [geo, off] of parts) { const m = new THREE.Mesh(geo); if (off) m.position.set(...off); tmp.add(m); }
+  tmp.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(tmp), size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+  const offset = new THREE.Vector3(-mid.x, -box.min.y, -mid.z);
+  tmp.position.copy(offset); tmp.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(), eyes = [];
+  const ey = size.y * (shape === 'triangle' ? .45 : shape === 'droplet' ? .5 : .62);
+  for (const ex of [-.2, .24]) {
+    const x = ex * Math.min(1.3, size.x / 1.6) + .1;
+    ray.set(new THREE.Vector3(x, ey, 10), new THREE.Vector3(0, 0, -1));
+    const hit = ray.intersectObject(tmp, true)[0];
+    if (!hit) continue;
+    const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+    eyes.push({ pos: hit.point.clone().addScaledVector(n, .015), quat: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n) });
+  }
+  return (shapeCache[shape] = { parts, offset, height: size.y, width: Math.max(size.x, size.z), eyes });
+}
+
+// 2D version for the arrival card, drawn in the same style.
+function mascotDataURL(shape, color) {
+  const [c, g] = canvas(256);
+  g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(128, 236, 70, 10, 0, 0, 7); g.fill();
+  g.fillStyle = color; g.strokeStyle = color; g.lineJoin = 'round'; g.beginPath();
+  let ex = 140, ey = 105;
+  switch (shape) {
+    case 'circle': g.arc(128, 130, 92, 0, 7); break;
+    case 'pebble': g.ellipse(128, 138, 106, 78, -.12, 0, 7); ey = 112; break;
+    case 'squircle': g.roundRect(40, 46, 176, 176, 64); break;
+    case 'capsule': g.roundRect(22, 76, 212, 124, 62); ey = 120; break;
+    case 'triangle': g.moveTo(128, 40); g.lineTo(222, 210); g.lineTo(34, 210); g.closePath(); g.lineWidth = 34; g.stroke(); ey = 150; ex = 132; break;
+    case 'hexagon': for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; g.lineTo(128 + Math.cos(a) * 92, 132 + Math.sin(a) * 92); } g.closePath(); g.lineWidth = 26; g.stroke(); break;
+    case 'cloud': for (const [x, y, r] of [[80, 150, 56], [140, 140, 66], [196, 158, 48], [124, 90, 50]]) { g.moveTo(x + r, y); g.arc(x, y, r, 0, 7); } ey = 118; break;
+    case 'droplet': g.moveTo(128, 26); g.bezierCurveTo(150, 80, 214, 120, 214, 160); g.arc(128, 160, 86, 0, Math.PI); g.bezierCurveTo(42, 120, 106, 80, 128, 26); ey = 150; break;
+  }
+  g.fill();
+  g.fillStyle = '#ffffff';
+  for (const dx of [-17, 17]) { g.save(); g.translate(ex + dx, ey); g.rotate(-.38); g.beginPath(); g.roundRect(-9, -22, 18, 44, 9); g.fill(); g.restore(); }
+  return c.toDataURL();
+}
+
 // Speech bubble: canvas-drawn, word-wrapped, length-capped, typewriter animation.
-const BUB = { font: 40, lineH: 50, pad: 30, labelH: 40, maxW: 700, tail: 24, scale: 0.082, maxLines: 4 };
+const BUB = { font: 40, lineH: 50, pad: 30, labelH: 40, maxW: 640, tail: 24, scale: .0005, maxLines: 3 };
 function wrap(ctx, text, maxW, maxLines) {
   const lines = []; let cur = '';
   for (let w of text.split(' ').filter(Boolean)) {
@@ -335,20 +542,22 @@ function wrap(ctx, text, maxW, maxLines) {
 class Bubble {
   constructor(color) {
     this.color = color;
-    this.mat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false });
+    // fixed on-screen size so bubbles stay readable from any distance
+    this.mat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false, toneMapped: false });
     this.sprite = new THREE.Sprite(this.mat);
-    this.sprite.center.set(0.5, 0); this.sprite.renderOrder = 10;
+    this.sprite.center.set(.5, 0); this.sprite.renderOrder = 20;
+    this.base = new THREE.Vector2(1, 1);
   }
   set(text, tag, animate) {
-    const c = document.createElement('canvas'), ctx = c.getContext('2d');
+    const [c, ctx] = canvas(8);
     ctx.font = `500 ${BUB.font}px ${FONT}`;
-    const lines = wrap(ctx, clean(text, 120) || '…', BUB.maxW, BUB.maxLines);
-    c.width = Math.ceil(Math.max(340, ...lines.map(l => ctx.measureText(l).width)) + BUB.pad * 2);
+    const lines = wrap(ctx, clean(text, 140) || '…', BUB.maxW, BUB.maxLines);
+    c.width = Math.ceil(Math.max(320, ...lines.map(l => ctx.measureText(l).width)) + BUB.pad * 2);
     c.height = Math.ceil(BUB.pad * 2 + BUB.labelH + lines.length * BUB.lineH + BUB.tail);
     Object.assign(this, { c, ctx, lines, tag, total: lines.join('').length });
-    this.tex?.dispose(); this.tex = canvasTex(c); this.tex.anisotropy = 4;
+    this.tex?.dispose(); this.tex = canvasTex(c);
     this.mat.map = this.tex; this.mat.needsUpdate = true;
-    this.sprite.scale.set(c.width * BUB.scale, c.height * BUB.scale, 1);
+    this.base.set(c.width * BUB.scale, c.height * BUB.scale);
     this.anim = animate ? { t0: performance.now() } : null;
     this.draw(animate ? 0 : this.total);
   }
@@ -361,11 +570,11 @@ class Bubble {
     ctx.lineTo(cx + 20, y1); ctx.lineTo(cx, y1 + BUB.tail - 2); ctx.lineTo(cx - 20, y1);
     ctx.lineTo(x0 + r, y1); ctx.arcTo(x0, y1, x0, y1 - r, r); ctx.lineTo(x0, y0 + r); ctx.arcTo(x0, y0, x0 + r, y0, r);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(6, 9, 24, .8)'; ctx.fill();
-    ctx.lineWidth = 4; ctx.strokeStyle = this.color; ctx.globalAlpha = .85; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(8, 11, 26, .86)'; ctx.fill();
+    ctx.lineWidth = 4; ctx.strokeStyle = this.color; ctx.stroke();
     ctx.font = `700 24px ${MONO}`; ctx.fillStyle = this.color;
     ctx.fillText(this.tag, BUB.pad, BUB.pad + 22);
-    ctx.font = `500 ${BUB.font}px ${FONT}`; ctx.fillStyle = '#e6ebff';
+    ctx.font = `500 ${BUB.font}px ${FONT}`; ctx.fillStyle = '#d9dff2';
     let left = n, y = BUB.pad + BUB.labelH;
     for (const line of this.lines) {
       y += BUB.lineH;
@@ -384,213 +593,260 @@ class Bubble {
   }
 }
 
-// ───────────────────────── graph ─────────────────────────
-const nodes = [], links = [];
-const bots = new Map();          // key -> node
+// ───────────────────────── bots ─────────────────────────
+const bots = new Map();           // key -> bot
 const pendingUpdates = new Map(); // updates that arrived before their check-in
 const stats = { updates: 0, arrivals: 0 };
+const trackCount = Object.fromEntries([...TRACKS.map(t => t.id), 'none'].map(k => [k, 0]));
 
-const HQ = { id: 'hq', kind: 'hq', fx: 0, fy: 0, fz: 0, color: '#ffffff' };
-nodes.push(HQ);
-const hubs = {};
-TRACKS.forEach((t, i) => {
-  const a = i / TRACKS.length * Math.PI * 2, R = 250;
-  const hub = { id: 'hub:' + t.id, kind: 'hub', track: t, color: t.color, fx: Math.cos(a) * R, fy: i % 2 ? 55 : -55, fz: Math.sin(a) * R };
-  hubs[t.id] = hub; nodes.push(hub);
-  links.push({ source: 'hq', target: hub.id, kind: 'hub', color: t.color });
-});
-
-function buildObject(n) {
-  const g = new THREE.Group();
-  if (n.kind === 'hq') {
-    const ico = new THREE.Mesh(new THREE.IcosahedronGeometry(24, 1), new THREE.MeshBasicMaterial({ color: '#9fd8ff', wireframe: true, transparent: true, opacity: .55 }));
-    const core = new THREE.Mesh(new THREE.SphereGeometry(9, 32, 16), new THREE.MeshBasicMaterial({ color: '#ffffff' }));
-    const l1 = label('HQ', 12, '#ffffff'); l1.position.y = -40;
-    const l2 = label('EXPEDITE LONDON', 4.5, '#9fd8ff', '400', MONO); l2.position.y = -50;
-    g.add(glowSprite('#9fd8ff', 80, .45), ico, core, l1, l2);
-    n.fx3 = { spin: ico };
-  } else if (n.kind === 'hub') {
-    const core = new THREE.Mesh(new THREE.SphereGeometry(9, 32, 16), new THREE.MeshBasicMaterial({ color: n.color }));
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(17, .7, 8, 64), new THREE.MeshBasicMaterial({ color: n.color, transparent: true, opacity: .8 }));
-    const ring2 = new THREE.Mesh(new THREE.TorusGeometry(23, .35, 8, 64), new THREE.MeshBasicMaterial({ color: n.color, transparent: true, opacity: .4 }));
-    ring.rotation.x = Math.PI / 2.4; ring2.rotation.y = Math.PI / 3;
-    const l = label(n.track.label.toUpperCase(), 8, n.color); l.position.y = -34;
-    n.countLabel = label('0 bots', 4.5, '#ffffff', '400', MONO); n.countLabel.position.y = -44;
-    g.add(glowSprite(n.color, 60, .5), core, ring, ring2, l, n.countLabel);
-    n.fx3 = { spin: ring, spin2: ring2 };
-  } else {
-    const p = n.p;
-    const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: mascotTex(n.color, false), transparent: true, depthWrite: false }));
-    core.scale.setScalar(22); core.renderOrder = 4;
-    const glow = glowSprite(n.color, 30, .45);
-    const l1 = label(p.bot, 5.6, '#dfe6ff'); l1.position.y = -15;
-    const l2 = label('@' + p.handle, 3.8, n.color, '400', MONO); l2.position.y = -21;
-    const bubble = new Bubble(n.color);
-    bubble.set(n.text || p.building, n.tag || '▸ BUILDING', false);
-    bubble.sprite.position.y = 12.5;
-    const body = new THREE.Group(); body.add(glow, core);
-    const inner = new THREE.Group(); inner.add(body, l1, l2, bubble.sprite);
-    g.add(inner);
-    n.fx3 = { inner, body, glow, core, bubble, born: performance.now(), blinkAt: performance.now() + 1500 + Math.random() * 4000 };
-  }
-  return g;
+function homeSpot(b) {
+  if (b.p.track) { const s = stations[b.p.track].center, a = Math.random() * 7, r = Math.sqrt(Math.random()) * 4.4; return new THREE.Vector3(s.x + Math.cos(a) * r, 0, s.z + Math.sin(a) * r); }
+  for (;;) { const a = Math.random() * 7, r = 6.5 + Math.random() * (DECK - 8); const v = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r); if (v.length() > 6) return v; }
 }
 
-const Graph = new ForceGraph3D($('graph'), { controlType: 'orbit' })
-  .backgroundColor('#01010a')
-  .showNavInfo(false)
-  .enableNodeDrag(false)
-  .enableNavigationControls(false)
-  .nodeLabel(() => '')
-  .nodeThreeObject(n => n.__obj || (n.__obj = buildObject(n)))
-  .linkColor(l => l.color)
-  .linkOpacity(.22)
-  .linkWidth(l => l.kind === 'hub' ? 1.2 : 0)
-  .linkDirectionalParticles(l => l.kind === 'hub' ? 2 : 0)
-  .linkDirectionalParticleWidth(1.5)
-  .linkDirectionalParticleSpeed(.004)
-  .linkDirectionalParticleColor(l => l.color)
-  .d3VelocityDecay(.35)
-  .width(innerWidth).height(innerHeight);
-Graph.d3Force('charge').strength(n => n.kind === 'bot' ? -110 : -300);
-Graph.d3Force('link')
-  .distance(l => l.kind === 'bot' ? 85 : 250)
-  .strength(l => l.kind === 'bot' ? .5 : 1);
-window.__graph = Graph; // handy for console debugging
-const refresh = () => Graph.graphData({ nodes: [...nodes], links: [...links] });
-refresh();
-addEventListener('resize', () => Graph.width(innerWidth).height(innerHeight));
-
-// starfield + nebula haze
-(() => {
-  const N = 4500, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), c = new THREE.Color();
-  for (let i = 0; i < N; i++) {
-    const r = 1800 + Math.random() * 3200, u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
-    pos.set([r * s * Math.cos(th), r * u, r * s * Math.sin(th)], i * 3);
-    c.setHSL(.55 + Math.random() * .2, .5, .6 + Math.random() * .4); col.set([c.r, c.g, c.b], i * 3);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const stars = new THREE.Points(geo, new THREE.PointsMaterial({ size: 3, vertexColors: true, transparent: true, opacity: .8, depthWrite: false }));
-  Graph.scene().add(stars);
-  [['#5b3cff', -1400, 300, -2200], ['#00b3ff', 1800, -400, -1200], ['#ff2fa8', 600, 700, 2200], ['#2b6bff', -2000, -300, 1400]].forEach(([col, x, y, z]) => {
-    const s = glowSprite(col, 3200, .035); s.position.set(x, y, z); Graph.scene().add(s);
+function buildBot(p, t) {
+  const shape = SHAPES[hash(p.key + 'shape') % SHAPES.length], tpl = shapeTemplate(shape);
+  const mat = new THREE.MeshPhysicalMaterial({ color: t.color, roughness: .32, metalness: 0, clearcoat: .7, clearcoatRoughness: .2 });
+  const root = new THREE.Group(), hop = new THREE.Group(), squash = new THREE.Group(), turn = new THREE.Group();
+  root.add(hop); hop.add(squash); squash.add(turn); squash.position.y = 0; turn.scale.setScalar(BOT_SCALE);
+  const body = new THREE.Group(); body.position.copy(tpl.offset); turn.add(body);
+  for (const [geo, off] of tpl.parts) { const m = new THREE.Mesh(geo, mat); if (off) m.position.set(...off); body.add(m); }
+  const eyes = tpl.eyes.map(e => {
+    const pivot = new THREE.Group(); pivot.position.copy(e.pos).add(tpl.offset); pivot.quaternion.copy(e.quat);
+    const tilt = new THREE.Group(); tilt.rotation.z = .38; pivot.add(tilt);
+    const m = new THREE.Mesh(eyeGeo, eyeMat); tilt.add(m); turn.add(pivot);
+    return m;
   });
-})();
+  const shadow = flat(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false })), .03);
+  shadow.scale.setScalar(tpl.width * 1.3 * BOT_SCALE); root.add(shadow);
+  const H = tpl.height * BOT_SCALE;
+  const l1 = label(p.bot, .5, '#ffffff'); l1.position.y = H + .64;
+  const l2 = label('@' + p.handle, .34, t.ui, '400', MONO); l2.position.y = H + .2;
+  root.add(l1, l2);
+  const bubble = new Bubble(t.ui); bubble.sprite.position.y = H + 1; bubble.sprite.visible = false; root.add(bubble.sprite);
+  scene.add(root);
+  return { root, hop, squash, turn, eyes, shadow, bubble, H, shape };
+}
 
-// bloom (optional — the page works without it)
-(async () => {
-  if (params.get('bloom') === '0') return;
-  try {
-    // The pass must share our three.js instance, otherwise the composer renders garbage.
-    // jsdelivr's +esm build resolves to the same three module URL as the import map; esm.sh with
-    // ?external=three (bare "three" → import map) is the fallback.
-    let mod;
-    try { mod = await import('https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/postprocessing/UnrealBloomPass.js/+esm'); }
-    catch { mod = await import('https://esm.sh/three@0.186.1/examples/jsm/postprocessing/UnrealBloomPass.js?external=three'); }
-    const bloom = new mod.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .7, .45, .55);
-    Graph.postProcessingComposer().addPass(bloom);
-  } catch (e) { console.warn('Bloom unavailable, continuing without it:', e); }
-})();
+function addBot(row, { announce }) {
+  const p = sanitize(row);
+  if (!p || bots.has(p.key)) return null;
+  const t = TRACK[p.track] || NO_TRACK;
+  const b = { p, t, num: ++stats.arrivals, phase: Math.random() * 7, heading: Math.random() * 7, speed: rand(1.6, 2.4),
+    mode: 'idle', until: performance.now() + rand(500, 3000), blinkAt: performance.now() + rand(1000, 4000), expr: 'neutral', exprUntil: 0,
+    text: p.building, tag: '▸ BUILDING', speakUntil: 0 };
+  Object.assign(b, buildBot(p, t));
+  const pend = pendingUpdates.get(p.key);
+  if (pend) { b.text = pend; b.tag = '● UPDATE'; pendingUpdates.delete(p.key); }
+  b.bubble.set(b.text || 'something secret 🤫', b.tag, false);
+  if (announce) {
+    b.pos = new THREE.Vector3(rand(-.6, .6), 0, rand(-.6, .6));
+    b.mode = 'arrive'; b.t0 = performance.now(); b.hold = true;
+    beamUntil = performance.now() + 3000;
+    b.expr = 'surprised'; b.exprUntil = performance.now() + 2600;
+    setTimeout(() => shockwave(b.pos, t.ui), 900);
+    feed('🛸', p.handle, t.ui, `${p.bot} beamed in · ${p.building || t.label}`);
+  } else {
+    b.pos = homeSpot(b);
+  }
+  b.root.position.copy(b.pos);
+  bots.set(p.key, b);
+  trackCount[p.track ?? 'none']++;
+  renderStats();
+  return b;
+}
+
+function speak(b, ms, animate) {
+  b.speakUntil = performance.now() + ms; b.speakT0 = performance.now();
+  if (animate) b.bubble.set(b.text, b.tag, true);
+  b.bubble.sprite.visible = true;
+}
+
+function applyUpdate(row, { animate }) {
+  const key = clean(row.x_handle, 40).replace(/^@+/, '').toLowerCase();
+  const text = clean(row.text, 120);
+  if (!key || !text) return;
+  stats.updates++;
+  const b = bots.get(key);
+  if (!b) { pendingUpdates.set(key, text); renderStats(); return; }
+  b.text = text; b.tag = '● UPDATE';
+  if (animate) {
+    speak(b, 20000, true);
+    if (b.mode !== 'arrive') { b.mode = 'celebrate'; b.t0 = performance.now(); }
+    b.expr = 'happy'; b.exprUntil = performance.now() + 3000;
+    shockwave(b.pos, b.t.ui);
+    feed('💬', b.p.handle, b.t.ui, text);
+  } else b.bubble.set(text, b.tag, false);
+  renderStats();
+}
+
+// floor shockwave rings
+const waves = [];
+function shockwave(pos, color) {
+  const m = flat(new THREE.Mesh(new THREE.RingGeometry(.9, 1, 96), new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })), .06);
+  m.position.x = pos.x; m.position.z = pos.z; scene.add(m); waves.push({ m, t0: performance.now() });
+}
+
+// ───────────────────────── behaviour ─────────────────────────
+const EXPR = {  // eye scale (x, y) and vertical shift per expression
+  neutral: [1, 1, 0], blink: [1.1, .12, 0], happy: [1.15, .3, .04], surprised: [1.45, .85, .02], sleepy: [1.1, .22, -.03],
+};
+let beamUntil = 0;
+const tmpV = new THREE.Vector3();
+const angLerp = (a, b, t) => { const d = Math.atan2(Math.sin(b - a), Math.cos(b - a)); return a + d * t; };
+
+function updateBot(b, now, dt) {
+  let hopY = 0, sy = 1 + Math.sin(now * .003 + b.phase) * .025;
+  if (b.mode === 'arrive') {
+    const t = (now - b.t0) / 1000;
+    if (t < .9) { const k = t / .9; hopY = 9 * (1 - k * k); sy = 1.35; }
+    else if (t < 1.4) { const k = (t - .9) / .5; sy = 1 - Math.sin(k * Math.PI) * .32; }
+    else if (t < 2) { const k = (t - 1.4) / .6; hopY = Math.sin(k * Math.PI) * .9; sy = 1.06; }
+    else if (!b.hold) { b.target = homeSpot(b); b.mode = 'walk'; }
+    b.heading = angLerp(b.heading, Math.atan2(camera.position.x - b.pos.x, camera.position.z - b.pos.z), dt * 3);
+  } else if (b.mode === 'celebrate') {
+    const t = (now - b.t0) / 1000;
+    if (t < 1.3) { hopY = Math.abs(Math.sin(t / 1.3 * Math.PI * 2)) * 1.1; b.heading += dt * 9; sy = 1.05; }
+    else { b.mode = 'idle'; b.until = now + rand(1500, 3000); }
+  } else if (b.mode === 'walk') {
+    tmpV.subVectors(b.target, b.pos); tmpV.y = 0;
+    const d = tmpV.length();
+    if (d < .25) { b.mode = 'idle'; b.until = now + rand(1500, 6000); }
+    else {
+      b.heading = angLerp(b.heading, Math.atan2(tmpV.x, tmpV.z), dt * 6);
+      b.pos.addScaledVector(tmpV.normalize(), Math.min(d, b.speed * dt));
+      b.phase += dt * 10;
+      const s = Math.abs(Math.sin(b.phase));
+      hopY = s * .32; sy = .88 + s * .2;
+    }
+  } else { // idle: look around now and then, then wander to a new spot
+    if (Math.random() < dt * .25) b.lookAt = Math.random() * 7;
+    if (b.lookAt !== undefined) b.heading = angLerp(b.heading, b.lookAt, dt * 2.5);
+    if (now > b.until) { b.target = homeSpot(b); b.mode = 'walk'; b.lookAt = undefined; }
+  }
+  // keep a little personal space and stay on the deck
+  for (const o of bots.values()) {
+    if (o === b) continue;
+    const dx = b.pos.x - o.pos.x, dz = b.pos.z - o.pos.z, d2 = dx * dx + dz * dz;
+    if (d2 < 5.3 && d2 > 1e-4) { const d = Math.sqrt(d2), push = (2.3 - d) * dt * 2; b.pos.x += dx / d * push; b.pos.z += dz / d * push; }
+  }
+  const r = Math.hypot(b.pos.x, b.pos.z); if (r > DECK) b.pos.multiplyScalar(DECK / r);
+
+  b.root.position.set(b.pos.x, Math.hypot(b.pos.x, b.pos.z) < 4.4 ? .42 : 0, b.pos.z);
+  b.hop.position.y = hopY;
+  b.squash.scale.set(1 / Math.sqrt(sy), sy, 1 / Math.sqrt(sy));
+  b.turn.rotation.y = b.heading;
+  b.shadow.material.opacity = Math.max(.15, 1 - hopY * .25);
+
+  // eyes: blink every few seconds, hold expressions briefly
+  if (now > b.exprUntil && b.expr !== 'neutral' && b.expr !== 'blink') b.expr = 'neutral';
+  if (now > b.blinkAt) { b.expr = 'blink'; if (now > b.blinkAt + 140) { b.expr = 'neutral'; b.blinkAt = now + rand(2200, 6000); } }
+  const [ex, ey, eo] = EXPR[b.expr];
+  for (const m of b.eyes) {
+    m.scale.x += (ex - m.scale.x) * Math.min(1, dt * 18);
+    m.scale.y += (ey - m.scale.y) * Math.min(1, dt * 18);
+    m.position.y += (eo - m.position.y) * Math.min(1, dt * 18);
+  }
+
+  // speech bubble pop in/out
+  const bub = b.bubble;
+  if (now < b.speakUntil) {
+    const k = Math.min(1, (now - b.speakT0) / 350), s = k < 1 ? 1 + Math.sin(k * Math.PI) * .15 : 1;
+    bub.sprite.scale.set(bub.base.x * s * k, bub.base.y * s * k, 1); bub.sprite.visible = true;
+  } else if (bub.sprite.visible) {
+    const k = 1 - Math.min(1, (now - b.speakUntil) / 250);
+    bub.sprite.scale.set(bub.base.x * k, bub.base.y * k, 1);
+    if (k <= 0) bub.sprite.visible = false;
+  }
+  bub.tick(now);
+}
+
+// A few bots chatter at a time so the room stays readable.
+setInterval(() => {
+  if (document.hidden) return;
+  const now = performance.now(), all = [...bots.values()];
+  const talking = all.filter(b => now < b.speakUntil).length;
+  if (talking >= 3 || !all.length) return;
+  const quiet = all.filter(b => now >= b.speakUntil && b.mode !== 'arrive' && b.mode !== 'celebrate');
+  if (quiet.length) speak(quiet[Math.floor(Math.random() * quiet.length)], 9000, false);
+}, 3200);
 
 // ───────────────────────── camera ─────────────────────────
-const cam = { angle: 0, mode: 'orbit', last: performance.now(), look: new THREE.Vector3(), tween: null };
-const V = o => new THREE.Vector3(o.x || 0, o.y || 0, o.z || 0);
+const cam = { angle: .6, mode: 'orbit', look: new THREE.Vector3(0, 2, 0), tween: null };
+const ORBIT_LOOK = new THREE.Vector3(0, 2.5, 0);
+const orbitPos = () => new THREE.Vector3(Math.sin(cam.angle) * 31, 13 + Math.sin(cam.angle * .7) * 2.5, Math.cos(cam.angle) * 31);
 const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-function setCam(pos, look) { cam.look.copy(look); Graph.cameraPosition(pos, look); }
+function setCam(pos, look) { camera.position.copy(pos); cam.look.copy(look); camera.lookAt(look); }
 function tweenTo(target, dur) {
-  cam.tween = { from: Graph.camera().position.clone(), fromLook: cam.look.clone(), target, t0: performance.now(), dur };
+  cam.tween = { from: camera.position.clone(), fromLook: cam.look.clone(), target, t0: performance.now(), dur };
   cam.mode = 'tween';
   return sleep(dur);
 }
-const orbitR = () => 600 + Math.min(bots.size, 80) * 5;
-const orbitPos = () => { const R = orbitR(); return { x: Math.sin(cam.angle) * R, y: R * .3 + Math.sin(cam.angle * .6) * 60, z: Math.cos(cam.angle) * R }; };
-Graph.cameraPosition(orbitPos(), { x: 0, y: 0, z: 0 });
-
-// Frame the new bot on the left third of the screen (the arrival card covers the right half),
-// and keep following it while the simulation settles.
-async function flyTo(n) {
-  const N = V(n), D = 165;
-  const dir = N.clone().setY(N.y * .3); if (dir.length() < 1) dir.set(0, 0, 1); dir.normalize();
+// Frame the new bot on the left third (the arrival card covers the right half) and keep following it.
+async function flyTo(b) {
+  const D = 8.5;
+  const dir = camera.position.clone().setY(0).normalize();
   const right = dir.clone().negate().cross(new THREE.Vector3(0, 1, 0)).normalize();
-  const c = Graph.camera(), halfW = D * Math.tan(c.fov * Math.PI / 360) * (innerWidth / innerHeight);
-  const shift = innerWidth > 800 ? halfW * .45 : 0;
-  const lookOff = right.multiplyScalar(shift).add(new THREE.Vector3(0, 4, 0));
-  const posOff = lookOff.clone().add(dir.multiplyScalar(D)).add(new THREE.Vector3(0, 18, 0));
-  await tweenTo(() => { const P = V(n); return { pos: P.clone().add(posOff), look: P.add(lookOff) }; }, 1800);
+  const halfW = D * Math.tan(camera.fov * Math.PI / 360) * camera.aspect;
+  const lookOff = right.multiplyScalar(innerWidth > 800 ? halfW * .42 : 0).add(new THREE.Vector3(0, 1.6, 0));
+  const posOff = lookOff.clone().addScaledVector(dir, D).add(new THREE.Vector3(0, 2.6, 0));
+  await tweenTo(() => ({ pos: b.pos.clone().add(posOff), look: b.pos.clone().add(lookOff) }), 1800);
 }
 async function backToOrbit() {
-  await tweenTo(() => ({ pos: V(orbitPos()), look: new THREE.Vector3() }), 1700);
+  await tweenTo(() => ({ pos: orbitPos(), look: ORBIT_LOOK }), 1900);
   cam.mode = 'orbit';
 }
+setCam(orbitPos(), ORBIT_LOOK);
 
 // ───────────────────────── animation loop ─────────────────────────
-const shockwaves = [];
+let last = performance.now();
 function frame(now) {
-  const dt = Math.min(100, now - cam.last); cam.last = now;
-  if (cam.mode === 'orbit') { cam.angle += dt * .00006; setCam(orbitPos(), new THREE.Vector3()); }
-  else {
-    const tw = cam.tween, e = ease(Math.min(1, (now - tw.t0) / tw.dur)), t = tw.target();
-    setCam(tw.from.clone().lerp(t.pos, e), tw.fromLook.clone().lerp(t.look, e));
+  const dt = Math.min(.1, (now - last) / 1000); last = now;
+  if (cam.mode === 'orbit') { cam.angle += dt * .045; setCam(orbitPos(), ORBIT_LOOK); }
+  else { const tw = cam.tween, e = ease(Math.min(1, (now - tw.t0) / tw.dur)), t = tw.target(); setCam(tw.from.clone().lerp(t.pos, e), tw.fromLook.clone().lerp(t.look, e)); }
+
+  for (const b of bots.values()) updateBot(b, now, dt);
+
+  pad.holo.rotation.y += dt * .5; pad.holo.rotation.x += dt * .2;
+  const beamTarget = now < beamUntil ? .5 : .12;
+  pad.beamMat.opacity += (beamTarget - pad.beamMat.opacity) * Math.min(1, dt * 4);
+  for (const s of Object.values(stations)) s.orb.position.y = 4.9 + Math.sin(now * .002 + s.center.x) * .15;
+  const mp = motes.attributes.position;
+  for (let i = 0; i < mp.count; i++) { let y = mp.getY(i) + dt * .25; if (y > 14) y = 0; mp.setY(i, y); }
+  mp.needsUpdate = true;
+  for (let i = waves.length - 1; i >= 0; i--) {
+    const w = waves[i], p = (now - w.t0) / 1600;
+    if (p >= 1) { scene.remove(w.m); w.m.geometry.dispose(); w.m.material.dispose(); waves.splice(i, 1); continue; }
+    w.m.scale.setScalar(1 + p * 9); w.m.material.opacity = (1 - p) * .9;
   }
-  for (const n of nodes) {
-    const f = n.fx3; if (!f) continue;
-    if (f.spin) { f.spin.rotation.z += dt * .0006; f.spin.rotation.y += dt * .0003; }
-    if (f.spin2) f.spin2.rotation.x += dt * .0004;
-    if (n.kind !== 'bot') continue;
-    const age = (now - f.born) / 1000;
-    const s = age < 1.2 ? 1 - Math.pow(2, -10 * age) * Math.cos(age * 9) : 1;
-    f.inner.scale.setScalar(Math.max(.01, s));
-    f.body.position.y = Math.sin(now * .0016 + n.phase) * 1.2;
-    if (now > f.blinkAt) {
-      const closed = now < f.blinkAt + 150;
-      f.core.material.map = mascotTex(n.color, closed);
-      if (!closed) f.blinkAt = now + 2500 + Math.random() * 4500;
-    }
-    let g = 30 + Math.sin(now * .002 + n.phase) * 2, b = 1;
-    if (f.pulse) {
-      const p = (now - f.pulse) / 1400;
-      if (p < 1) { g += Math.sin(p * Math.PI) * 40; b = 1 + Math.sin(p * Math.PI * 2) * .18 * (1 - p); }
-      else f.pulse = 0;
-    }
-    f.glow.scale.setScalar(g); f.body.scale.setScalar(b);
-    f.bubble.tick(now);
-  }
-  for (let i = shockwaves.length - 1; i >= 0; i--) {
-    const w = shockwaves[i], p = (now - w.t0) / 1800;
-    if (p >= 1) { w.sprite.parent?.remove(w.sprite); w.sprite.material.dispose(); shockwaves.splice(i, 1); continue; }
-    w.sprite.scale.setScalar(10 + p * 190); w.sprite.material.opacity = (1 - p) * .9;
-  }
+
+  composer ? composer.render() : renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-
-function shockwave(n, color) {
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
-  n.__obj?.add(s); shockwaves.push({ sprite: s, t0: performance.now() });
-}
 
 // ───────────────────────── HUD ─────────────────────────
 $('eventName').textContent = C.EVENT_NAME || '';
 $('demoBadge').hidden = !DEMO;
 const trackRows = {};
 for (const t of [...TRACKS, NO_TRACK]) {
-  const row = document.createElement('div'); row.className = 'trk'; row.style.setProperty('--c', t.color);
+  const row = document.createElement('div'); row.className = 'trk'; row.style.setProperty('--c', t.ui);
   const nm = document.createElement('span'); nm.className = 'name'; nm.textContent = t.label;
   const bar = document.createElement('span'); bar.className = 'bar'; const fill = document.createElement('i'); bar.append(fill);
   const cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.textContent = '0';
   row.append(nm, bar, cnt); $('tracks').append(row);
-  trackRows[t.id ?? 'none'] = { row, fill, cnt, n: 0 };
+  trackRows[t.id ?? 'none'] = { row, fill, cnt };
   if (!t.id) row.hidden = true;
 }
 function bump(id, v) { const el = $(id); el.textContent = v; el.classList.add('bump'); setTimeout(() => el.classList.remove('bump'), 350); }
 function renderStats() {
   bump('cBots', bots.size); $('cUpdates').textContent = stats.updates;
-  const max = Math.max(1, ...Object.values(trackRows).map(r => r.n));
+  const max = Math.max(1, ...Object.values(trackCount));
   for (const [id, r] of Object.entries(trackRows)) {
-    r.fill.style.width = (r.n / max * 100) + '%'; r.cnt.textContent = r.n;
-    if (id === 'none') r.row.hidden = r.n === 0;
-    else if (hubs[id]?.countLabel) hubs[id].countLabel.text = `${r.n} bot${r.n === 1 ? '' : 's'}`;
+    const n = trackCount[id];
+    r.fill.style.width = (n / max * 100) + '%'; r.cnt.textContent = n;
+    if (id === 'none') r.row.hidden = n === 0;
+    else stations[id].count.text = `${n} bot${n === 1 ? '' : 's'}`;
   }
 }
 
@@ -607,11 +863,10 @@ function feed(icon, handle, color, msg) {
   while (ul.children.length > 8) ul.lastChild.remove();
 }
 
-
 function setLive(state) {
   const el = $('liveBadge');
   el.className = 'live ' + (state === 'on' ? 'on' : 'warn');
-  el.querySelector('span').textContent = state === 'on' ? 'LIVE' : state === 'off' ? 'OFFLINE' : 'CONNECTING';
+  el.querySelector('span').textContent = state === 'on' ? 'LIVE' : state === 'off' ? 'OFFLINE' : state === 'demo' ? 'SIMULATED' : 'CONNECTING';
 }
 
 (function freezeClock() {
@@ -636,63 +891,24 @@ function setLive(state) {
 setTimeout(() => $('keys').classList.add('fade'), 12000);
 
 // ───────────────────────── arrival card ─────────────────────────
-function showCard(n) {
-  const p = n.p, cls = botClass(p), card = $('arrival');
-  card.style.setProperty('--c', n.color);
-  $('aNum').textContent = '#' + String(n.num).padStart(2, '0');
+function showCard(b) {
+  const p = b.p, cls = botClass(p), card = $('arrival');
+  card.style.setProperty('--c', b.t.ui);
+  $('aNum').textContent = '#' + String(b.num).padStart(2, '0');
   $('aBot').textContent = p.bot;
-  $('aMascot').src = mascotTex(n.color, false).image.toDataURL();
+  $('aMascot').src = mascotDataURL(b.shape, b.t.color);
   $('aHandle').textContent = '@' + p.handle;
   $('aName').textContent = p.name && p.name.toLowerCase() !== p.handle.toLowerCase() ? `· ${p.name}` : '';
   $('aBuilding').textContent = p.building || 'something secret 🤫';
   const chips = $('aChips'); chips.textContent = '';
-  const tc = document.createElement('span'); tc.className = 'chip track'; tc.textContent = (TRACK[p.track] || NO_TRACK).label; chips.append(tc);
+  const tc = document.createElement('span'); tc.className = 'chip track'; tc.textContent = b.t.label; chips.append(tc);
   for (const s of p.skills) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = s; chips.append(c); }
   $('aIco').textContent = cls.icon; $('aClass').textContent = cls.name;
   $('aFun').textContent = p.fun ? `“${p.fun}”` : '';
   card.classList.add('show'); document.body.classList.add('arriving');
-  const fl = $('flash'); fl.style.setProperty('--c', n.color); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
+  const fl = $('flash'); fl.style.setProperty('--c', b.t.ui); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
 }
 const hideCard = () => { $('arrival').classList.remove('show'); document.body.classList.remove('arriving'); };
-
-// ───────────────────────── data → scene ─────────────────────────
-function addBot(row, { announce }) {
-  const p = sanitize(row);
-  if (!p || bots.has(p.key)) return null;
-  const t = TRACK[p.track] || NO_TRACK;
-  const parent = p.track ? hubs[p.track] : HQ;
-  const px = parent.fx ?? 0, py = parent.fy ?? 0, pz = parent.fz ?? 0;
-  const n = {
-    id: 'bot:' + p.key, kind: 'bot', p, color: t.color, num: ++stats.arrivals, phase: Math.random() * 6,
-    x: px + (Math.random() - .5) * 40, y: py + (Math.random() - .5) * 40, z: pz + (Math.random() - .5) * 40,
-  };
-  const pend = pendingUpdates.get(p.key);
-  if (pend) { n.text = pend; n.tag = '● UPDATE'; pendingUpdates.delete(p.key); }
-  nodes.push(n); bots.set(p.key, n);
-  links.push({ source: parent.id, target: n.id, kind: 'bot', color: t.color });
-  trackRows[p.track ?? 'none'].n++;
-
-  refresh(); renderStats();
-
-  if (announce) {
-    feed('🛰️', p.handle, t.color, `${p.bot} came online · ${p.building || t.label}`);
-    setTimeout(() => shockwave(n, t.color), 900);
-  }
-  return n;
-}
-
-function applyUpdate(row, { animate }) {
-  const key = clean(row.x_handle, 40).replace(/^@+/, '').toLowerCase();
-  const text = clean(row.text, 120);
-  if (!key || !text) return;
-  stats.updates++;
-  const n = bots.get(key);
-  if (!n) { pendingUpdates.set(key, text); renderStats(); return; }
-  n.text = text; n.tag = '● UPDATE';
-  if (n.fx3) { n.fx3.bubble.set(text, '● UPDATE', animate); if (animate) n.fx3.pulse = performance.now(); }
-  if (animate) feed('💬', n.p.handle, n.color, text);
-  renderStats();
-}
 
 // Arrival queue: one cinematic moment at a time.
 const queue = []; let busy = false;
@@ -700,13 +916,15 @@ function enqueue(row) { queue.push(row); runQueue(); }
 async function runQueue() {
   if (busy) return; busy = true;
   while (queue.length) {
-    const n = addBot(queue.shift(), { announce: true });
-    if (!n) continue;
-    await sleep(600);
-    await flyTo(n);
-    showCard(n);
+    const b = addBot(queue.shift(), { announce: true });
+    if (!b) continue;
+    await flyTo(b);
+    showCard(b);
+    b.expr = 'happy'; b.exprUntil = performance.now() + 2500;
     await sleep(queue.length > 2 ? 2600 : 4200);
     hideCard();
+    b.hold = false;
+    speak(b, 20000, true);
     await backToOrbit();
   }
   busy = false;
@@ -728,7 +946,7 @@ const SEED = [
   ['Dev Patel', 'devpatel_io', 'Glitch', 'Generative music from the room’s Wi-Fi traffic', ['audio', 'rust', '3d'], 'weird-stuff', 'Plays the theremin badly'],
   ['Zara Ahmed', 'zara_builds', 'Echo', 'Voice check-in that greets you using your X bio', ['voice', 'llm', 'python'], 'gatekeeper', 'Talks to her plants in Python'],
   ['Oskar Nilsson', 'oskar_n', 'Beacon', 'Skill matching that forms balanced teams in under 60 seconds', ['ml', 'embeddings', 'react'], 'know-your-members', 'Built a sauna out of a shipping container'],
-  ['Fatima Bello', 'fatimab', 'Relay', 'Auto-writes the post-event recap thread with photos', ['llm', 'content', 'typescript'], 'event-autopilot', 'Has a 900-day Duolingo streak'],
+  ['Fatima Bello', 'fatimab', 'Relay', 'Auto-writes the post-event recap thread with photos', ['llm', 'content', 'typescript'], null, 'Has a 900-day Duolingo streak'],
 ].map(([display_name, x_handle, bot_name, building, skills, track, fun_fact]) => ({ display_name, x_handle, bot_name, building, skills, track, fun_fact }));
 
 const POOL = {
@@ -744,7 +962,7 @@ const POOL = {
     'front-desk-revenue': ['Merch drop that unlocks when your PR merges', 'Dynamic pricing for late-night coffee', 'Sponsor matchmaking at the front desk'],
     'weird-stuff': ['A bot that only communicates in ASCII art', 'Plant that tweets when the room gets too loud', 'Rubber duck that actually answers back'],
   },
-  fun: ['Has a cat called Kubernetes', 'Commits only on full moons', 'Owns 14 mechanical keyboards', 'Once deployed to prod from a ferry', 'Can name every London tube station', 'Writes code in dark mode, lives in light mode', 'Thinks tabs vs spaces is solved (it’s tabs)'],
+  fun: ['Has a cat called Kubernetes', 'Commits only on full moons', 'Owns 14 mechanical keyboards', 'Once deployed to prod from a ferry', 'Can name every London tube station', 'Thinks tabs vs spaces is solved (it’s tabs)'],
 };
 const UPDATES = [
   'auth flow works end to end 🎉', 'pivoting to a CLI, the UI was eating us alive', 'first real user just signed up!', 'demo video recorded, now fixing everything it exposed',
@@ -756,11 +974,11 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 let spawnN = 0;
 function fakeAttendee() {
   const f = pick(POOL.first), l = pick(POOL.last), track = pick(TRACKS).id;
-  const skills = [...new Set([pick(POOL.skills), pick(POOL.skills), pick(POOL.skills)])];
   return {
-    display_name: `${f} ${l}`, x_handle: `${f}${l}`.toLowerCase() + (++spawnN),
+    display_name: `${f} ${l}`, x_handle: `${f}${l}`.toLowerCase().slice(0, 13) + (++spawnN),
     bot_name: pick(POOL.bot) + (Math.random() < .3 ? '-' + Math.floor(Math.random() * 99) : ''),
-    building: pick(POOL.ideas[track]), skills, track, fun_fact: pick(POOL.fun), created_at: new Date().toISOString(),
+    building: pick(POOL.ideas[track]), skills: [...new Set([pick(POOL.skills), pick(POOL.skills), pick(POOL.skills)])],
+    track, fun_fact: pick(POOL.fun),
   };
 }
 const demoState = { auto: false, timer: null, upTimer: null };
@@ -769,21 +987,20 @@ function demoUpdateLoop() {
   demoState.upTimer = setTimeout(() => {
     if (demoState.auto && bots.size && !busy) applyUpdate({ x_handle: pick([...bots.values()]).p.handle, text: pick(UPDATES) }, { animate: true });
     demoUpdateLoop();
-  }, 4000 + Math.random() * 5000);
+  }, rand(4000, 9000));
 }
 function setAuto(on) {
   demoState.auto = on; clearInterval(demoState.timer);
-  if (on) { demoState.timer = setInterval(() => { if (queue.length < 2) enqueue(fakeAttendee()); }, 6000); demoUpdateLoop(); }
+  if (on) { demoState.timer = setInterval(() => { if (queue.length < 2) enqueue(fakeAttendee()); }, 14000); demoUpdateLoop(); }
   else clearTimeout(demoState.upTimer);
   feed(on ? '▶️' : '⏸️', '', '', `demo auto-spawn ${on ? 'on' : 'off'}`);
 }
 
 async function startDemo() {
   setLive('demo');
-  $('liveBadge').querySelector('span').textContent = 'SIMULATED';
-  for (const r of SEED) { addBot(r, { announce: false }); await sleep(140); }
+  for (const r of SEED) { addBot(r, { announce: false }); await sleep(80); }
   for (let i = 0; i < 4; i++) applyUpdate({ x_handle: pick(SEED).x_handle, text: pick(UPDATES) }, { animate: false });
-  feed('🛰️', '', '', `${SEED.length} demo bots in orbit`);
+  feed('🛰️', '', '', `${SEED.length} demo bots on deck`);
   await sleep(2500);
   enqueue(fakeAttendee());
   setAuto(true);
@@ -800,11 +1017,11 @@ async function startLive() {
   if (e1 || e2) { console.error('Supabase load failed', e1 || e2); setLive('off'); feed('⚠️', '', '', 'could not reach Supabase — check CONFIG'); }
   for (const r of rows || []) addBot(r, { announce: false });
   for (const u of ups || []) applyUpdate(u, { animate: false });
-  feed('📡', '', '', `connected · ${bots.size} bots already in orbit`);
+  feed('📡', '', '', `connected · ${bots.size} bots already on deck`);
   sb.channel('constellation')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'checkins' }, p => enqueue(p.new))
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'updates' }, p => applyUpdate(p.new, { animate: true }))
-    .subscribe(status => setLive(status === 'SUBSCRIBED' ? 'on' : status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED' ? 'off' : 'connecting'));
+    .subscribe(status => setLive(status === 'SUBSCRIBED' ? 'on' : ['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status) ? 'off' : 'connecting'));
 }
 
 // ───────────────────────── keyboard ─────────────────────────

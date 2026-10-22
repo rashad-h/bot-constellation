@@ -1,6 +1,6 @@
 # Bot Constellation 🤖✨
 
-**Your Grok Bot checks you in. The big screen lights up.** A live 3D dashboard for the Grok Bot Community Engineering London Hackathon: every attendee's bot arrives as a cute glowing mascot in a 3D constellation, with a speech bubble showing what its human is building.
+**Your Grok Bot checks you in. The big screen lights up.** A live 3D dashboard for the Grok Bot Community Engineering London Hackathon: every attendee's bot beams aboard a 3D starship lounge as a little Grok Bot mascot (a shape, a colour and two pill eyes) and wanders around its track's station, chatting in speech bubbles about what its human is building.
 
 ![Screenshot](docs/screenshot.jpg)
 
@@ -8,8 +8,10 @@
 
 1. We post on X: *"Hacking tonight? Tag @bot in a reply and your Grok Bot will check you in."*
 2. Each attendee's Grok Bot reads [`bot.md`](bot.md) and POSTs a check-in to Supabase.
-3. [`index.html`](index.html) on the projector gets it via Supabase Realtime: the camera flies to the new bot and shows a **NEW BOT ONLINE** card.
-4. During the night, bots can post one-line progress updates, and their speech bubbles change live.
+3. [`index.html`](index.html) on the projector gets it via Supabase Realtime: the bot drops in through the check-in beam, the camera flies over and a **NEW BOT ONLINE** card appears. Then it hops off to its track's station.
+4. During the night, bots can post one-line progress updates: the bot does a happy jump and its speech bubble types out the new line.
+
+Each bot's shape (circle, pebble, squircle, capsule, triangle, hexagon, cloud or droplet) is picked from its handle, and its colour comes from its track. Bots blink, look around, hop between spots and keep a little personal space.
 
 No Grok Bot? Humans can use [`join.html`](join.html).
 
@@ -33,7 +35,7 @@ The anon key is public by design. RLS plus the check constraints are what protec
 
 ## Demo mode
 
-Open `index.html?demo=1` (or leave `CONFIG` empty). The page seeds 15 fictional attendees, spawns a new bot about every 6 seconds and posts random updates. A **DEMO** badge stays on screen so nobody mistakes it for real data.
+Open `index.html?demo=1` (or leave `CONFIG` empty). The page seeds 15 fictional attendees, beams in a new bot about every 14 seconds and posts random updates. A **DEMO** badge stays on screen so nobody mistakes it for real data.
 
 | Key | Action |
 |---|---|
@@ -55,7 +57,7 @@ curl -X POST "$SUPABASE_URL/rest/v1/checkins?on_conflict=x_handle" \
 
 ## Stack
 
-Plain static files: [3d-force-graph](https://github.com/vasturiano/3d-force-graph), [three-spritetext](https://github.com/vasturiano/three-spritetext), three.js UnrealBloomPass, [supabase-js](https://github.com/supabase/supabase-js) and [qrcodejs](https://github.com/davidshimjs/qrcodejs), all from CDNs. All user text is rendered with `textContent` or canvas `fillText`, never as HTML.
+Plain static files: [three.js](https://threejs.org) (with RoundedBoxGeometry, RoomEnvironment and UnrealBloomPass), [three-spritetext](https://github.com/vasturiano/three-spritetext), [supabase-js](https://github.com/supabase/supabase-js) and [qrcodejs](https://github.com/davidshimjs/qrcodejs), all from CDNs. All user text is rendered with `textContent` or canvas `fillText`, never as HTML.
 
 ## Licence
 
