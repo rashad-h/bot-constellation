@@ -60,7 +60,10 @@
     </label>
     <label>Skills<input name="skills" maxlength="160" placeholder="python, react, design"><small class="hint">comma separated, up to 6</small></label>
   </div>
-  <label>Fun fact<input name="fun_fact" maxlength="80" placeholder="Optional"></label>
+  <div class="row">
+    <label>Fun fact<input name="fun_fact" maxlength="80" placeholder="Optional"></label>
+    <label>LinkedIn<input name="linkedin_url" maxlength="140" placeholder="linkedin.com/in/you (optional)"></label>
+  </div>
   <button id="go" type="submit">BEAM ME IN 🤖</button>
   <div id="msg" role="status"></div>
 </form>
@@ -69,6 +72,13 @@
   const say = (t, cls) => { msg.textContent = t; msg.className = cls || ''; };
   const sb = C.SUPABASE_URL && C.SUPABASE_ANON_KEY ? supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY) : null;
   if (!sb) say('Not configured yet — fill CONFIG in join.html.', 'err');
+
+  // Accepts "linkedin.com/in/x", "www.linkedin.com/in/x/" or a full URL; returns null if blank, false if invalid.
+  const normLinkedIn = v => {
+    v = v.trim(); if (!v) return null;
+    const m = v.match(/^(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/in\/([A-Za-z0-9_%-]{2,100})\/?(?:[?#].*)?$/i);
+    return m ? `https://www.linkedin.com/in/${m[1]}` : false;
+  };
 
   f.addEventListener('submit', async e => {
     e.preventDefault();
@@ -81,9 +91,11 @@
       skills: d.skills.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6).map(s => s.slice(0, 24)),
       track: d.track || null,
       fun_fact: d.fun_fact.trim() || null,
+      linkedin_url: normLinkedIn(d.linkedin_url),
     };
     if (!/^[A-Za-z0-9_]{1,15}$/.test(row.x_handle)) return say('X handle: letters, numbers and _ only (max 15).', 'err');
     if (!row.display_name || !row.building) return say('Name and what you are building are required.', 'err');
+    if (row.linkedin_url === false) return say('LinkedIn should look like linkedin.com/in/your-name', 'err');
     if (!sb) return say('Not configured yet.', 'err');
     go.disabled = true; say('Beaming you in…');
     const { error } = await sb.from('checkins').upsert(row, { onConflict: 'x_handle', ignoreDuplicates: true });

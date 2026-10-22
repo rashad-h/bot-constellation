@@ -13,6 +13,7 @@ create table if not exists public.checkins (
   skills       text[] not null default '{}',
   track        text,
   fun_fact     text,
+  linkedin_url text,
   created_at   timestamptz not null default now(),
 
   constraint x_handle_format   check (x_handle ~ '^[A-Za-z0-9_]{1,15}$'),
@@ -22,6 +23,7 @@ create table if not exists public.checkins (
   constraint skills_count      check (cardinality(skills) <= 6),
   constraint skills_len        check (char_length(array_to_string(skills, ',')) <= 200),
   constraint fun_fact_len      check (fun_fact is null or char_length(fun_fact) <= 80),
+  constraint linkedin_url_format check (linkedin_url is null or linkedin_url ~ '^https://([a-z]{2,3}\.)?linkedin\.com/in/[A-Za-z0-9_%-]{2,100}/?$'),
   constraint track_valid       check (track is null or track in (
     'gatekeeper', 'know-your-members', 'event-autopilot',
     'open-venue-db', 'front-desk-revenue', 'weird-stuff'

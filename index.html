@@ -128,6 +128,7 @@
   #arrival .building span { font-family: var(--mono); font-size: .85rem; letter-spacing: .18em; color: var(--c); display: block; margin-bottom: .25rem; }
   #arrival .chips { margin-top: 1.2rem; display: flex; flex-wrap: wrap; gap: .5rem; }
   .chip { padding: .32rem .8rem; border-radius: 999px; font-size: .95rem; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.07); }
+  .chip.li { border-color: rgba(10,102,194,.8); background: rgba(10,102,194,.25); color: #cfe6ff; }
   .chip.track { border-color: var(--c); color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); font-weight: 700; }
   #arrival .cls { margin-top: 1.3rem; display: flex; align-items: center; gap: .8rem; font-size: 1.25rem; }
   #arrival .cls .ico { font-size: 2.2rem; filter: drop-shadow(0 0 12px var(--c)); }
@@ -237,6 +238,7 @@ function sanitize(r) {
     skills,
     track: TRACK[r.track] ? r.track : null,
     fun: clean(r.fun_fact, 80),
+    linkedin: (String(r.linkedin_url ?? '').match(/linkedin\.com\/in\/([A-Za-z0-9_%-]{2,100})/) || [])[1] || '',
   };
 }
 const hash = s => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
@@ -919,6 +921,7 @@ function showCard(b, pill = 'NEW BOT ONLINE') {
   const chips = $('aChips'); chips.textContent = '';
   const tc = document.createElement('span'); tc.className = 'chip track'; tc.textContent = b.t.label; chips.append(tc);
   for (const s of p.skills) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = s; chips.append(c); }
+  if (p.linkedin) { const c = document.createElement('span'); c.className = 'chip li'; let slug = p.linkedin; try { slug = decodeURIComponent(slug); } catch {} c.textContent = 'in/' + clean(slug, 40); chips.append(c); }
   $('aIco').textContent = cls.icon; $('aClass').textContent = cls.name;
   $('aFun').textContent = p.fun ? `“${p.fun}”` : '';
   card.classList.add('show'); document.body.classList.add('arriving'); cardUp = true;
@@ -1028,6 +1031,7 @@ function fakeAttendee() {
   const f = pick(POOL.first), l = pick(POOL.last), track = pick(TRACKS).id;
   return {
     display_name: `${f} ${l}`, x_handle: `${f}${l}`.toLowerCase().slice(0, 13) + (++spawnN),
+    linkedin_url: Math.random() < .6 ? `https://www.linkedin.com/in/${f}-${l}`.toLowerCase() : null,
     bot_name: pick(POOL.bot) + (Math.random() < .3 ? '-' + Math.floor(Math.random() * 99) : ''),
     building: pick(POOL.ideas[track]), skills: [...new Set([pick(POOL.skills), pick(POOL.skills), pick(POOL.skills)])],
     track, fun_fact: pick(POOL.fun),
