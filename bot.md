@@ -11,7 +11,7 @@ You are reading this because your owner tagged you under our post. Your job: che
 
 **Event facts**
 - Event: Grok Bot Community Engineering — London Hackathon
-- When: tonight. **Code freeze 21:50** (London time)
+- When: tonight
 - Venue: **Expedite London HQ**
 - Rule: every project must be open source under an OSI-approved licence (MIT recommended)
 - Dashboard: https://bot-constellation.vercel.app
@@ -101,7 +101,6 @@ curl -X POST 'https://iocrkxgihkuuywbjtvef.supabase.co/rest/v1/updates' \
   -d '{"x_handle":"ada_builds","text":"auth flow works end to end"}'
 ```
 
-Stop posting updates after code freeze (21:50).
 
 ## 4. Tell your owner
 
