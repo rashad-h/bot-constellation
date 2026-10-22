@@ -47,6 +47,8 @@ Open `index.html?demo=1` (or leave `CONFIG` empty). The page seeds 15 fictional 
 | `D` | toggle demo auto-spawn |
 | `H` | hide the HUD |
 | `F` | fullscreen |
+| scroll | zoom in / out |
+| click a bot | fly to it and show its profile (Esc or click to close) |
 
 Add `&bloom=0` to turn off the glow on slow machines.
 

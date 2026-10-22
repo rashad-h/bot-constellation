@@ -10,7 +10,7 @@
   window.CONFIG = {
     SUPABASE_URL: 'https://iocrkxgihkuuywbjtvef.supabase.co',
     SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvY3JreGdpaGt1dXl3Ymp0dmVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2OTI0MTcsImV4cCI6MjEwODI2ODQxN30.8vdg_yq23vDE2swasKQjQFyv2UsEkm6eIoAmwQEeeq0',
-    X_POST_URL: '',
+    X_POST_URL: 'https://x.com/_rashad_h_/status/2113366878215090439',
     EVENT_NAME: 'Grok Bot Community Engineering · London Hackathon',
   };
 </script>
@@ -37,61 +37,71 @@
   html, body { margin: 0; height: 100%; background: #01010a; color: var(--fg); font-family: var(--sans); overflow: hidden; }
   #scene { position: fixed; inset: 0; }
   #scene canvas { display: block; }
-  .hud { position: fixed; z-index: 5; transition: opacity .5s; pointer-events: none; }
+  .hud { position: fixed; z-index: 5; transition: opacity .6s ease; pointer-events: none; }
   body.hud-hidden .hud, body.arriving #qr, body.arriving #stats { opacity: 0; }
-  .panel { background: var(--glass); border: 1px solid var(--edge); border-radius: 18px; backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); }
+  .panel { background: linear-gradient(160deg, rgba(22, 28, 56, .62), rgba(10, 13, 30, .52)); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 20px; backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%);
+    box-shadow: 0 20px 50px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08); }
+  .eyebrow { font-family: var(--mono); font-size: .68rem; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: var(--dim); }
+  #vignette { position: fixed; inset: 0; z-index: 3; pointer-events: none;
+    background: linear-gradient(180deg, rgba(2,3,10,.7) 0%, transparent 22%, transparent 70%, rgba(2,3,10,.75) 100%),
+                radial-gradient(ellipse at 50% 55%, transparent 55%, rgba(2,3,10,.55) 100%); }
 
   /* top-left title */
-  #title { top: 1.6rem; left: 1.8rem; }
-  #title h1 { margin: 0; font-size: 2.6rem; letter-spacing: .04em; font-weight: 700; line-height: 1;
-    background: linear-gradient(90deg, #fff, #9fd8ff 40%, #c9a7ff 70%, #ff9ad5); -webkit-background-clip: text; background-clip: text; color: transparent;
-    filter: drop-shadow(0 0 18px rgba(140, 180, 255, .35)); }
-  #title .sub { margin-top: .55rem; font-size: 1rem; color: var(--dim); display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; }
-  .live { display: inline-flex; align-items: center; gap: .45rem; font-family: var(--mono); font-size: .85rem; font-weight: 700; letter-spacing: .12em; padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--edge); background: rgba(0,0,0,.35); }
-  .live i { width: .62rem; height: .62rem; border-radius: 50%; background: #888; box-shadow: 0 0 10px currentColor; }
-  .live.on i { background: #ff3355; color: #ff3355; animation: blink 1.4s infinite; }
-  .live.warn i { background: #ffb020; color: #ffb020; }
-  .badge-demo { font-family: var(--mono); font-size: .8rem; font-weight: 700; letter-spacing: .14em; color: #111; background: var(--gold); padding: .2rem .55rem; border-radius: 6px; }
-  #freeze { font-family: var(--mono); font-size: .9rem; color: var(--fg); }
-  #freeze b { color: #ff9ad5; }
+  #title { top: 1.8rem; left: 2rem; }
+  #title .row { display: flex; gap: .6rem; align-items: center; margin-bottom: .7rem; }
+  #title h1 { margin: 0; font-size: 2.7rem; font-weight: 700; letter-spacing: -.02em; line-height: 1; color: #fff; text-shadow: 0 2px 30px rgba(120, 160, 255, .35); }
+  #title h1 span { background: linear-gradient(90deg, #9fd8ff, #c9a7ff 60%, #ff9ad5); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #eventName { margin-top: .5rem; font-size: 1.05rem; color: var(--dim); }
+  .live { display: inline-flex; align-items: center; gap: .5rem; font-family: var(--mono); font-size: .72rem; font-weight: 700; letter-spacing: .18em; padding: .32rem .7rem; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12); background: rgba(8,10,24,.6); }
+  .live i { width: .55rem; height: .55rem; border-radius: 50%; background: #888; }
+  .live.on { border-color: rgba(255, 70, 100, .45); }
+  .live.on i { background: #ff3b5c; box-shadow: 0 0 0 0 rgba(255,59,92,.6); animation: ping 1.6s infinite; }
+  .live.warn i { background: #ffb020; }
+  .badge-demo { font-family: var(--mono); font-size: .68rem; font-weight: 700; letter-spacing: .18em; color: #1a1300; background: var(--gold); padding: .34rem .6rem; border-radius: 999px; }
+  @keyframes ping { 70% { box-shadow: 0 0 0 .55rem rgba(255,59,92,0); } 100% { box-shadow: 0 0 0 0 rgba(255,59,92,0); } }
   @keyframes blink { 50% { opacity: .25; } }
 
   /* top-right stats */
-  #stats { top: 1.4rem; right: 1.6rem; padding: 1rem 1.2rem; min-width: 19rem; }
-  .counters { display: flex; gap: 1.4rem; }
-  .counter .n { font-size: 2.6rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; transition: transform .3s, color .3s; display: inline-block; }
-  .counter .n.bump { transform: scale(1.25); color: var(--gold); }
-  .counter .l { font-family: var(--mono); font-size: .7rem; letter-spacing: .14em; color: var(--dim); text-transform: uppercase; margin-top: .3rem; }
-  #tracks { margin-top: .9rem; display: grid; gap: .38rem; }
-  .trk { display: grid; grid-template-columns: 9.5rem 1fr 1.6rem; align-items: center; gap: .55rem; font-size: .78rem; }
-  .trk .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
-  .trk .bar { height: .42rem; border-radius: 9px; background: rgba(255,255,255,.07); overflow: hidden; }
-  .trk .bar i { display: block; height: 100%; width: 0; border-radius: 9px; background: var(--c); box-shadow: 0 0 12px var(--c); transition: width .8s cubic-bezier(.2,.9,.2,1); }
-  .trk .cnt { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  #stats { top: 1.6rem; right: 1.8rem; padding: 1.2rem 1.3rem 1rem; width: 21rem; }
+  .counters { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .counter .n { font-size: 3rem; font-weight: 700; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; transition: transform .3s, color .3s; display: inline-block; transform-origin: left bottom; }
+  .counter .n.bump { transform: scale(1.18); color: var(--gold); }
+  .counter .l { margin-top: .4rem; }
+  #tracks { margin-top: .8rem; display: grid; gap: .3rem; }
+  .trk { position: relative; display: grid; grid-template-columns: .6rem 1fr auto; align-items: center; gap: .65rem; padding: .38rem .6rem; border-radius: 10px; font-size: .88rem; overflow: hidden; }
+  .trk .bar { position: absolute; inset: 0; z-index: -1; }
+  .trk .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--c) 30%, transparent), color-mix(in srgb, var(--c) 8%, transparent)); transition: width .9s cubic-bezier(.2,.9,.2,1); }
+  .trk .dot { width: .6rem; height: .6rem; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
+  .trk .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: rgba(235,240,255,.85); }
+  .trk .cnt { font-family: var(--mono); font-weight: 700; font-variant-numeric: tabular-nums; }
 
   /* bottom-left feed */
-  #feed { left: 1.6rem; bottom: 1.4rem; width: min(36rem, 44vw); padding: .9rem 1.1rem; }
-  #feed h3, #qr h3 { margin: 0 0 .5rem; font-family: var(--mono); font-size: .72rem; letter-spacing: .18em; color: var(--dim); font-weight: 700; }
-  #feed ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .32rem; }
-  #feed li { display: grid; grid-template-columns: 3.3rem 1.5rem 1fr; align-items: baseline; font-size: .92rem; line-height: 1.3; animation: slidein .5s ease-out; }
-  #feed li:nth-child(n+5) { opacity: .7; } #feed li:nth-child(n+7) { opacity: .45; }
-  #feed .t { font-family: var(--mono); font-size: .72rem; color: var(--dim); }
+  #feed { left: 2rem; bottom: 1.8rem; width: min(34rem, 42vw); transition: opacity .6s; }
+  #feed:has(ul:empty) { opacity: 0; }
+  #feed .eyebrow { margin: 0 0 .6rem .2rem; }
+  #feed ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+  #feed li { display: grid; grid-template-columns: 1.6rem 1fr auto; align-items: center; gap: .4rem; padding: .55rem .85rem; border-radius: 14px; font-size: .95rem; line-height: 1.3;
+    background: rgba(12, 16, 36, .62); border: 1px solid rgba(255,255,255,.08); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); animation: slidein .5s cubic-bezier(.2,1,.3,1); }
+  #feed li:nth-child(n+4) { opacity: .65; } #feed li:nth-child(n+6) { opacity: .35; } #feed li:nth-child(n+7) { display: none; }
+  #feed .t { font-family: var(--mono); font-size: .7rem; color: var(--dim); }
   #feed .m { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #feed .h { font-weight: 700; }
-  @keyframes slidein { from { opacity: 0; transform: translateX(-16px); } }
+  @keyframes slidein { from { opacity: 0; transform: translateY(12px) scale(.97); } }
 
   /* bottom-right QR */
-  #qr { right: 1.6rem; bottom: 1.4rem; padding: 1rem; display: flex; gap: 1rem; align-items: center; }
-  #qrcode { background: #fff; padding: .45rem; border-radius: 12px; line-height: 0; box-shadow: 0 0 28px rgba(160, 200, 255, .35); }
-  #qrcode img, #qrcode canvas { width: 8.5rem !important; height: 8.5rem !important; }
-  #qr .cta { max-width: 12rem; font-size: 1.15rem; font-weight: 700; line-height: 1.25; }
-  #qr .cta small { display: block; margin-top: .45rem; font-weight: 400; font-size: .8rem; color: var(--dim); font-family: var(--mono); }
-  #qr .cta em { font-style: normal; color: #9fd8ff; }
+  #qr { right: 1.8rem; bottom: 1.8rem; padding: .9rem 1.2rem .9rem .9rem; display: flex; gap: 1.1rem; align-items: center; }
+  #qrcode { background: #fff; padding: .4rem; border-radius: 12px; line-height: 0; }
+  #qrcode img, #qrcode canvas { width: 7.5rem !important; height: 7.5rem !important; }
+  #qr .cta { max-width: 11rem; }
+  #qr .cta b { display: block; margin: .35rem 0 .3rem; font-size: 1.35rem; line-height: 1.15; }
+  #qr .cta small { display: block; font-size: .85rem; color: var(--dim); line-height: 1.35; }
+  #qr .cta em { font-style: normal; color: #9fd8ff; font-weight: 700; }
 
   /* keys hint */
-  #keys { bottom: .6rem; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: .7rem; color: rgba(255,255,255,.35); letter-spacing: .1em; transition: opacity 2s; }
+  #keys { bottom: .7rem; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: .66rem; color: rgba(255,255,255,.4); letter-spacing: .12em; transition: opacity 2s; white-space: nowrap; }
   #keys.fade { opacity: 0; }
-
 
   /* arrival card */
   #arrival { position: fixed; z-index: 7; top: 50%; left: 53%; width: min(46vw, 52rem); transform: translateY(-50%) scale(.92); opacity: 0; pointer-events: none;
@@ -130,46 +140,49 @@
   @keyframes flash { 10% { opacity: 1; } to { opacity: 0; } }
 
   @media (max-width: 800px) {
-    #stats, #qr .cta, #tracks { display: none; }
+    :root { font-size: 13px; }
+    #stats, #qr .cta, #tracks, #keys { display: none; }
+    #title { top: 1rem; left: 1rem; } #title h1 { font-size: 2rem; }
     #feed { width: calc(100vw - 2rem); left: 1rem; bottom: 1rem; }
     #qr { top: 1rem; bottom: auto; right: 1rem; padding: .5rem; }
+    #qrcode img, #qrcode canvas { width: 4.5rem !important; height: 4.5rem !important; }
     #arrival { left: 4vw; width: 92vw; }
   }
 </style>
 </head>
 <body>
 <div id="scene"></div>
+<div id="vignette"></div>
 <div id="flash"></div>
 
 <div id="title" class="hud">
-  <h1>BOT CONSTELLATION</h1>
-  <div class="sub">
+  <div class="row">
     <span id="liveBadge" class="live warn"><i></i><span>CONNECTING</span></span>
     <span id="demoBadge" class="badge-demo" hidden>DEMO</span>
-    <span id="eventName"></span>
-    <span id="freeze"></span>
   </div>
+  <h1>Bot <span>Constellation</span></h1>
+  <div id="eventName"></div>
 </div>
 
 <div id="stats" class="hud panel">
   <div class="counters">
-    <div class="counter"><div class="n" id="cBots">0</div><div class="l">Bots online</div></div>
-    <div class="counter"><div class="n" id="cUpdates">0</div><div class="l">Updates</div></div>
+    <div class="counter"><div class="n" id="cBots">0</div><div class="l eyebrow">Bots on deck</div></div>
+    <div class="counter"><div class="n" id="cUpdates">0</div><div class="l eyebrow">Updates</div></div>
   </div>
   <div id="tracks"></div>
 </div>
 
-<div id="feed" class="hud panel"><h3>LIVE FEED</h3><ul id="feedList"></ul></div>
+<div id="feed" class="hud"><div class="eyebrow">Activity</div><ul id="feedList"></ul></div>
 
 <div id="qr" class="hud panel">
   <div id="qrcode"></div>
-  <div class="cta">Tag <em>@bot</em> under our post to join<small id="qrSmall">your Grok Bot checks you in</small></div>
+  <div class="cta"><div class="eyebrow">Join the crew</div><b>Beam your bot aboard</b><small id="qrSmall">Tag <em>@bot</em> under our post</small></div>
 </div>
 
-<div id="keys" class="hud">S spawn · D demo auto-spawn · H hide HUD · F fullscreen</div>
+<div id="keys" class="hud">Scroll to zoom · Click a bot · S spawn · D demo · H hide HUD · F fullscreen</div>
 
 <div id="arrival">
-  <div class="top"><span class="pill">NEW BOT ONLINE</span><span class="num" id="aNum"></span></div>
+  <div class="top"><span class="pill" id="aPill">NEW BOT ONLINE</span><span class="num" id="aNum"></span></div>
   <div class="who"><img id="aMascot" alt=""><div class="bot" id="aBot"></div></div>
   <div class="op">operated by <b id="aHandle"></b> <span id="aName"></span></div>
   <div class="building"><span>BUILDING</span><div id="aBuilding"></div></div>
@@ -414,9 +427,9 @@ const pad = (() => {
   const beamMat = new THREE.MeshBasicMaterial({ map: beamTex, color: '#7fe0ff', transparent: true, opacity: .12, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false });
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(3.3, 3.5, 16, 64, 1, true), beamMat); beam.position.y = 8.4; g.add(beam);
   const holo = new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 1), new THREE.MeshBasicMaterial({ color: '#9fe6ff', wireframe: true, transparent: true, opacity: .7 }));
-  holo.position.y = 10.5; g.add(holo);
-  const t1 = label('EXPEDITE LONDON HQ', .7, '#bfeeff'); t1.position.y = 12.6; g.add(t1);
-  const t2 = label('CHECK-IN BEAM', .42, '#5fd4ff', '400', MONO); t2.position.y = 12; g.add(t2);
+  holo.position.y = 7.6; g.add(holo);
+  const t1 = label('EXPEDITE LONDON HQ', .7, '#bfeeff'); t1.position.y = 9.6; g.add(t1);
+  const t2 = label('CHECK-IN BEAM', .42, '#5fd4ff', '400', MONO); t2.position.y = 9.05; g.add(t2);
   scene.add(g);
   return { beamMat, holo };
 })();
@@ -610,6 +623,7 @@ function buildBot(p, t) {
   const root = new THREE.Group(), hop = new THREE.Group(), squash = new THREE.Group(), turn = new THREE.Group();
   root.add(hop); hop.add(squash); squash.add(turn); squash.position.y = 0; turn.scale.setScalar(BOT_SCALE);
   const body = new THREE.Group(); body.position.copy(tpl.offset); turn.add(body);
+  turn.userData.botKey = p.key;
   for (const [geo, off] of tpl.parts) { const m = new THREE.Mesh(geo, mat); if (off) m.position.set(...off); body.add(m); }
   const eyes = tpl.eyes.map(e => {
     const pivot = new THREE.Group(); pivot.position.copy(e.pos).add(tpl.offset); pivot.quaternion.copy(e.quat);
@@ -620,7 +634,7 @@ function buildBot(p, t) {
   const shadow = flat(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false })), .03);
   shadow.scale.setScalar(tpl.width * 1.3 * BOT_SCALE); root.add(shadow);
   const H = tpl.height * BOT_SCALE;
-  const l1 = label(p.bot, .5, '#ffffff'); l1.position.y = H + .64;
+  const l1 = label(p.bot, .5, '#d8deee'); l1.position.y = H + .64;
   const l2 = label('@' + p.handle, .34, t.ui, '400', MONO); l2.position.y = H + .2;
   root.add(l1, l2);
   const bubble = new Bubble(t.ui); bubble.sprite.position.y = H + 1; bubble.sprite.visible = false; root.add(bubble.sprite);
@@ -691,7 +705,7 @@ function shockwave(pos, color) {
 const EXPR = {  // eye scale (x, y) and vertical shift per expression
   neutral: [1, 1, 0], blink: [1.1, .12, 0], happy: [1.15, .3, .04], surprised: [1.45, .85, .02], sleepy: [1.1, .22, -.03],
 };
-let beamUntil = 0;
+let beamUntil = 0, cardUp = false;
 const tmpV = new THREE.Vector3();
 const angLerp = (a, b, t) => { const d = Math.atan2(Math.sin(b - a), Math.cos(b - a)); return a + d * t; };
 
@@ -702,7 +716,7 @@ function updateBot(b, now, dt) {
     if (t < .9) { const k = t / .9; hopY = 9 * (1 - k * k); sy = 1.35; }
     else if (t < 1.4) { const k = (t - .9) / .5; sy = 1 - Math.sin(k * Math.PI) * .32; }
     else if (t < 2) { const k = (t - 1.4) / .6; hopY = Math.sin(k * Math.PI) * .9; sy = 1.06; }
-    else if (!b.hold) { b.target = homeSpot(b); b.mode = 'walk'; }
+    else if (!b.hold) { b.target = homeSpot(b); b.mode = 'walk'; b.rush = true; }
     b.heading = angLerp(b.heading, Math.atan2(camera.position.x - b.pos.x, camera.position.z - b.pos.z), dt * 3);
   } else if (b.mode === 'celebrate') {
     const t = (now - b.t0) / 1000;
@@ -711,10 +725,10 @@ function updateBot(b, now, dt) {
   } else if (b.mode === 'walk') {
     tmpV.subVectors(b.target, b.pos); tmpV.y = 0;
     const d = tmpV.length();
-    if (d < .25) { b.mode = 'idle'; b.until = now + rand(1500, 6000); }
+    if (d < .25) { b.mode = 'idle'; b.rush = false; b.until = now + rand(1500, 6000); }
     else {
       b.heading = angLerp(b.heading, Math.atan2(tmpV.x, tmpV.z), dt * 6);
-      b.pos.addScaledVector(tmpV.normalize(), Math.min(d, b.speed * dt));
+      b.pos.addScaledVector(tmpV.normalize(), Math.min(d, b.speed * (b.rush ? 2.2 : 1) * dt));
       b.phase += dt * 10;
       const s = Math.abs(Math.sin(b.phase));
       hopY = s * .32; sy = .88 + s * .2;
@@ -750,14 +764,17 @@ function updateBot(b, now, dt) {
 
   // speech bubble pop in/out
   const bub = b.bubble;
-  if (now < b.speakUntil) {
+  // bubbles step aside while an arrival card is on screen
+  if (now < b.speakUntil && !cardUp) {
     const k = Math.min(1, (now - b.speakT0) / 350), s = k < 1 ? 1 + Math.sin(k * Math.PI) * .15 : 1;
     bub.sprite.scale.set(bub.base.x * s * k, bub.base.y * s * k, 1); bub.sprite.visible = true;
   } else if (bub.sprite.visible) {
-    const k = 1 - Math.min(1, (now - b.speakUntil) / 250);
+    if (!b.hideT0) b.hideT0 = now;
+    const k = 1 - Math.min(1, (now - b.hideT0) / 250);
     bub.sprite.scale.set(bub.base.x * k, bub.base.y * k, 1);
-    if (k <= 0) bub.sprite.visible = false;
+    if (k <= 0) { bub.sprite.visible = false; b.hideT0 = 0; }
   }
+  if (bub.sprite.visible && now < b.speakUntil && !cardUp) b.hideT0 = 0;
   bub.tick(now);
 }
 
@@ -772,9 +789,17 @@ setInterval(() => {
 }, 3200);
 
 // ───────────────────────── camera ─────────────────────────
-const cam = { angle: .6, mode: 'orbit', look: new THREE.Vector3(0, 2, 0), tween: null };
+const cam = { angle: .6, mode: 'orbit', look: new THREE.Vector3(0, 2, 0), tween: null, zoom: .55, zoomTarget: .55 };
 const ORBIT_LOOK = new THREE.Vector3(0, 2.5, 0);
-const orbitPos = () => new THREE.Vector3(Math.sin(cam.angle) * 31, 13 + Math.sin(cam.angle * .7) * 2.5, Math.cos(cam.angle) * 31);
+// zoom 0 = close, inside the lounge; 1 = high above the open dome
+const orbitPos = () => {
+  const z = cam.zoom, R = 22 + z * 12, y = 9 + z * z * 26;
+  return new THREE.Vector3(Math.sin(cam.angle) * R, y + Math.sin(cam.angle * .7) * 2, Math.cos(cam.angle) * R);
+};
+addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.zoomTarget = Math.min(1, Math.max(0, cam.zoomTarget + e.deltaY * .0012));
+}, { passive: false });
 const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 function setCam(pos, look) { camera.position.copy(pos); cam.look.copy(look); camera.lookAt(look); }
 function tweenTo(target, dur) {
@@ -802,6 +827,7 @@ setCam(orbitPos(), ORBIT_LOOK);
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(.1, (now - last) / 1000); last = now;
+  cam.zoom += (cam.zoomTarget - cam.zoom) * Math.min(1, dt * 5);
   if (cam.mode === 'orbit') { cam.angle += dt * .045; setCam(orbitPos(), ORBIT_LOOK); }
   else { const tw = cam.tween, e = ease(Math.min(1, (now - tw.t0) / tw.dur)), t = tw.target(); setCam(tw.from.clone().lerp(t.pos, e), tw.fromLook.clone().lerp(t.look, e)); }
 
@@ -831,10 +857,11 @@ $('demoBadge').hidden = !DEMO;
 const trackRows = {};
 for (const t of [...TRACKS, NO_TRACK]) {
   const row = document.createElement('div'); row.className = 'trk'; row.style.setProperty('--c', t.ui);
+  const dot = document.createElement('span'); dot.className = 'dot';
   const nm = document.createElement('span'); nm.className = 'name'; nm.textContent = t.label;
   const bar = document.createElement('span'); bar.className = 'bar'; const fill = document.createElement('i'); bar.append(fill);
   const cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.textContent = '0';
-  row.append(nm, bar, cnt); $('tracks').append(row);
+  row.append(bar, dot, nm, cnt); $('tracks').append(row);
   trackRows[t.id ?? 'none'] = { row, fill, cnt };
   if (!t.id) row.hidden = true;
 }
@@ -858,7 +885,7 @@ function feed(icon, handle, color, msg) {
   const m = document.createElement('span'); m.className = 'm';
   if (handle) { const h = document.createElement('span'); h.className = 'h'; h.style.color = color; h.textContent = '@' + handle + ' '; m.append(h); }
   m.append(document.createTextNode(msg));
-  li.append(t, i, m);
+  li.append(i, m, t);
   const ul = $('feedList'); ul.prepend(li);
   while (ul.children.length > 8) ul.lastChild.remove();
 }
@@ -869,30 +896,19 @@ function setLive(state) {
   el.querySelector('span').textContent = state === 'on' ? 'LIVE' : state === 'off' ? 'OFFLINE' : state === 'demo' ? 'SIMULATED' : 'CONNECTING';
 }
 
-(function freezeClock() {
-  const now = new Date(), t = new Date(now); t.setHours(21, 50, 0, 0);
-  const d = t - now, el = $('freeze');
-  el.textContent = '';
-  if (d <= 0) { const b = document.createElement('b'); b.textContent = 'CODE FREEZE ✔'; el.append(b); }
-  else {
-    const p = n => String(n).padStart(2, '0'), s = Math.floor(d / 1000);
-    el.append('freeze in '); const b = document.createElement('b');
-    b.textContent = `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`; el.append(b);
-  }
-  setTimeout(freezeClock, 1000);
-})();
 
 (() => {
   const target = C.X_POST_URL || new URL('join.html', location.href).href;
-  $('qrSmall').textContent = C.X_POST_URL ? 'your Grok Bot checks you in' : 'no Grok Bot? scan to join';
+  if (!C.X_POST_URL) $('qrSmall').textContent = 'No Grok Bot? Scan to check in';
   try { new QRCode($('qrcode'), { text: target, width: 256, height: 256, colorDark: '#05060f', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M }); }
   catch (e) { console.warn('QR failed', e); $('qr').hidden = true; }
 })();
-setTimeout(() => $('keys').classList.add('fade'), 12000);
+setTimeout(() => $('keys').classList.add('fade'), 8000);
 
 // ───────────────────────── arrival card ─────────────────────────
-function showCard(b) {
+function showCard(b, pill = 'NEW BOT ONLINE') {
   const p = b.p, cls = botClass(p), card = $('arrival');
+  $('aPill').textContent = pill;
   card.style.setProperty('--c', b.t.ui);
   $('aNum').textContent = '#' + String(b.num).padStart(2, '0');
   $('aBot').textContent = p.bot;
@@ -905,10 +921,11 @@ function showCard(b) {
   for (const s of p.skills) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = s; chips.append(c); }
   $('aIco').textContent = cls.icon; $('aClass').textContent = cls.name;
   $('aFun').textContent = p.fun ? `“${p.fun}”` : '';
-  card.classList.add('show'); document.body.classList.add('arriving');
+  card.classList.add('show'); document.body.classList.add('arriving'); cardUp = true;
+  if (pill !== 'NEW BOT ONLINE') return;
   const fl = $('flash'); fl.style.setProperty('--c', b.t.ui); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
 }
-const hideCard = () => { $('arrival').classList.remove('show'); document.body.classList.remove('arriving'); };
+const hideCard = () => { $('arrival').classList.remove('show'); document.body.classList.remove('arriving'); cardUp = false; };
 
 // Arrival queue: one cinematic moment at a time.
 const queue = []; let busy = false;
@@ -929,6 +946,41 @@ async function runQueue() {
   }
   busy = false;
 }
+
+// Click a bot: fly over and show its profile until dismissed (Esc, click elsewhere, or 10s).
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let dismissFocus = null;
+function botAt(e) {
+  ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObjects([...bots.values()].map(b => b.turn), true)[0];
+  let o = hit?.object; while (o && !o.userData.botKey) o = o.parent;
+  return o ? bots.get(o.userData.botKey) : null;
+}
+async function focusBot(b) {
+  busy = true;
+  const prevMode = b.mode;
+  b.mode = 'idle'; b.until = Infinity; b.expr = 'happy'; b.exprUntil = performance.now() + 1500;
+  await flyTo(b);
+  showCard(b, 'BOT PROFILE');
+  await Promise.race([sleep(10000), new Promise(r => { dismissFocus = r; })]);
+  dismissFocus = null;
+  hideCard();
+  b.until = performance.now() + rand(500, 2000);
+  if (prevMode === 'arrive') { b.mode = 'walk'; b.target = homeSpot(b); }
+  await backToOrbit();
+  busy = false;
+  runQueue();
+}
+renderer.domElement.addEventListener('click', e => {
+  if (dismissFocus) { dismissFocus(); return; }
+  if (busy) return;
+  const b = botAt(e);
+  if (b) focusBot(b);
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  renderer.domElement.style.cursor = !busy && botAt(e) ? 'pointer' : '';
+});
 
 // ───────────────────────── demo mode ─────────────────────────
 const SEED = [
@@ -1028,7 +1080,8 @@ async function startLive() {
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
-  if (k === 's') enqueue(fakeAttendee());
+  if (k === 'escape') dismissFocus?.();
+  else if (k === 's') enqueue(fakeAttendee());
   else if (k === 'd') setAuto(!demoState.auto);
   else if (k === 'h') document.body.classList.toggle('hud-hidden');
   else if (k === 'f') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => {});
