@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join the Constellation</title>
+<script>
+  // Same values as CONFIG in index.html.
+  window.CONFIG = { SUPABASE_URL: '', SUPABASE_ANON_KEY: '' };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+  :root { --fg: #eef2ff; --dim: rgba(220,228,255,.62); --edge: rgba(255,255,255,.16); --accent: #9fd8ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; font-family: 'Space Grotesk', system-ui, sans-serif; color: var(--fg);
+    background: radial-gradient(ellipse at 20% 0%, #2a1a6b 0%, transparent 55%), radial-gradient(ellipse at 90% 100%, #0b4a6b 0%, transparent 50%), #01010a;
+    display: grid; place-items: center; padding: 24px 16px; }
+  form { width: min(560px, 100%); padding: 32px; border-radius: 24px; background: rgba(14,18,40,.55); border: 1px solid var(--edge);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 0 80px rgba(120,140,255,.18); }
+  h1 { margin: 0; font-size: 2rem; background: linear-gradient(90deg, #fff, #9fd8ff 50%, #c9a7ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  p.lead { color: var(--dim); margin: .4rem 0 1.6rem; }
+  label { display: block; margin-bottom: 1rem; font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; font-family: 'JetBrains Mono', monospace; color: var(--dim); }
+  input, select { display: block; width: 100%; margin-top: .4rem; padding: .75rem .9rem; border-radius: 12px; border: 1px solid var(--edge);
+    background: rgba(0,0,0,.35); color: var(--fg); font: 500 1rem 'Space Grotesk', system-ui, sans-serif; letter-spacing: 0; text-transform: none; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(159,216,255,.2); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } form { padding: 22px; } }
+  button { width: 100%; margin-top: .6rem; padding: .95rem; border: 0; border-radius: 14px; font: 700 1.05rem 'Space Grotesk', sans-serif; letter-spacing: .06em;
+    color: #04040a; background: linear-gradient(90deg, #9fd8ff, #c9a7ff); cursor: pointer; box-shadow: 0 0 30px rgba(159,216,255,.35); }
+  button:disabled { opacity: .5; cursor: wait; }
+  #msg { margin-top: 1rem; min-height: 1.4em; text-align: center; }
+  #msg.ok { color: #39ff88; } #msg.err { color: #ff6b8b; }
+  small.hint { display: block; margin-top: .35rem; text-transform: none; letter-spacing: 0; font-family: 'Space Grotesk', sans-serif; }
+</style>
+</head>
+<body>
+<form id="f" novalidate>
+  <h1>Join the Constellation</h1>
+  <p class="lead">No Grok Bot? Check yourself in and appear on the big screen.</p>
+  <div class="row">
+    <label>X handle<input name="x_handle" required maxlength="16" placeholder="ada_builds" autocomplete="off"></label>
+    <label>Your name<input name="display_name" required maxlength="60" placeholder="Ada"></label>
+  </div>
+  <label>Bot name<input name="bot_name" maxlength="40" placeholder="Nimbus (or leave blank)"></label>
+  <label>What are you building tonight?<input name="building" required maxlength="140" placeholder="One short sentence"></label>
+  <div class="row">
+    <label>Track
+      <select name="track">
+        <option value="">— none yet —</option>
+        <option value="gatekeeper">Gatekeeper</option>
+        <option value="know-your-members">Know Your Members</option>
+        <option value="event-autopilot">Event Autopilot</option>
+        <option value="open-venue-db">Open Venue DB</option>
+        <option value="front-desk-revenue">Front Desk Revenue</option>
+        <option value="weird-stuff">Weird Stuff</option>
+      </select>
+    </label>
+    <label>Skills<input name="skills" maxlength="160" placeholder="python, react, design"><small class="hint">comma separated, up to 6</small></label>
+  </div>
+  <label>Fun fact<input name="fun_fact" maxlength="80" placeholder="Optional"></label>
+  <button id="go" type="submit">BEAM ME IN 🤖</button>
+  <div id="msg" role="status"></div>
+</form>
+<script>
+  const C = window.CONFIG, f = document.getElementById('f'), msg = document.getElementById('msg'), go = document.getElementById('go');
+  const say = (t, cls) => { msg.textContent = t; msg.className = cls || ''; };
+  const sb = C.SUPABASE_URL && C.SUPABASE_ANON_KEY ? supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY) : null;
+  if (!sb) say('Not configured yet — fill CONFIG in join.html.', 'err');
+
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(f));
+    const row = {
+      x_handle: d.x_handle.trim().replace(/^@+/, ''),
+      display_name: d.display_name.trim(),
+      bot_name: d.bot_name.trim() || null,
+      building: d.building.trim(),
+      skills: d.skills.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6).map(s => s.slice(0, 24)),
+      track: d.track || null,
+      fun_fact: d.fun_fact.trim() || null,
+    };
+    if (!/^[A-Za-z0-9_]{1,15}$/.test(row.x_handle)) return say('X handle: letters, numbers and _ only (max 15).', 'err');
+    if (!row.display_name || !row.building) return say('Name and what you are building are required.', 'err');
+    if (!sb) return say('Not configured yet.', 'err');
+    go.disabled = true; say('Beaming you in…');
+    const { error } = await sb.from('checkins').upsert(row, { onConflict: 'x_handle', ignoreDuplicates: true });
+    go.disabled = false;
+    if (error) return say('Something went wrong: ' + error.message, 'err');
+    say("You're in! Look up at the big screen ✨", 'ok');
+    f.reset();
+  });
+</script>
+</body>
+</html>
